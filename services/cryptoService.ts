@@ -213,6 +213,30 @@ export const cryptoService = {
         const decodedString = textDecoder.decode(decryptedContent);
         return JSON.parse(decodedString) as T;
     },
+    
+    async sign(data: any): Promise<string> {
+        if (!signingKeyPair) {
+            throw new Error("Not authenticated. Cannot sign data.");
+        }
+
+        const dataString = JSON.stringify(data);
+        const encodedData = textEncoder.encode(dataString);
+
+        const signature = await window.crypto.subtle.sign(
+            { name: 'ECDSA', hash: 'SHA-256' },
+            signingKeyPair.privateKey,
+            encodedData
+        );
+        
+        return encode(new Uint8Array(signature));
+    },
+
+    async getPublicSigningKey(): Promise<JsonWebKey | null> {
+        if (!signingKeyPair) {
+            return null;
+        }
+        return window.crypto.subtle.exportKey('jwk', signingKeyPair.publicKey);
+    },
 
     async encryptBackup(data: object, password: string): Promise<string> {
         const salt = window.crypto.getRandomValues(new Uint8Array(16));

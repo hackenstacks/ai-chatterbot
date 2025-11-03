@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import FeatureLayout from './common/FeatureLayout';
 import { dbService } from '../services/dbService';
 import { cryptoService } from '../services/cryptoService';
-import { DownloadIcon, UploadIcon, EditIcon, TrashIcon } from '../components/Icons';
+import { DownloadIcon, UploadIcon, EditIcon, TrashIcon, ShareIcon } from '../components/Icons';
 import { Persona } from '../types';
 import PersonaConfigModal from './common/PersonaConfigModal';
 import PasswordPromptModal from '../components/PasswordPromptModal';
@@ -230,6 +230,34 @@ const Settings: React.FC = () => {
         event.target.value = '';
     };
 
+    const handleSharePersona = async (persona: Persona) => {
+        try {
+            const signature = await cryptoService.sign(persona);
+            const publicKey = await cryptoService.getPublicSigningKey();
+            
+            const shareablePayload = {
+                persona,
+                signature, // base64
+                publicKey, // JWK
+            };
+    
+            const dataString = JSON.stringify(shareablePayload, null, 2);
+            const blob = new Blob([dataString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const safeRoleName = persona.role.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            a.href = url;
+            a.download = `persona-${safeRoleName}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e: any) {
+            console.error("Failed to share persona:", e);
+            setError(`Failed to create shareable persona file: ${e.message}`);
+        }
+    };
+
     return (
         <FeatureLayout title="Settings" description="Manage your application data, chatbot personas, and voice preferences.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -242,10 +270,11 @@ const Settings: React.FC = () => {
                                     <p className="font-semibold">{p.role}</p>
                                     <p className="text-xs text-slate-400 truncate max-w-xs">{p.personalityTraits}</p>
                                 </div>
-                                <div className="flex items-center space-x-2">
+                                <div className="flex items-center space-x-1">
                                     {!p.isActive && <button onClick={() => handleSetActive(p.id)} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-2 rounded">Apply</button>}
-                                    <button onClick={() => handleEditPersona(p)} className="p-2 hover:bg-slate-600 rounded"><EditIcon/></button>
-                                    <button onClick={() => handleDeletePersona(p.id)} className="p-2 hover:bg-red-600 rounded"><TrashIcon/></button>
+                                    <button onClick={() => handleSharePersona(p)} className="p-2 hover:bg-slate-600 rounded" title="Share Persona"><ShareIcon/></button>
+                                    <button onClick={() => handleEditPersona(p)} className="p-2 hover:bg-slate-600 rounded" title="Edit Persona"><EditIcon/></button>
+                                    <button onClick={() => handleDeletePersona(p.id)} className="p-2 hover:bg-red-600 rounded" title="Delete Persona"><TrashIcon/></button>
                                 </div>
                             </div>
                         )) : <p className="text-slate-500 text-center mt-8">No personas created yet.</p>}
@@ -296,7 +325,7 @@ const Settings: React.FC = () => {
                         />
                         <label
                             htmlFor="import-file"
-                            className={`flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${isImporting || isExporting ? 'cursor-not-allowed bg-slate-600' : 'cursor-pointer'}`}
+                            className={`flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${isImporting || isImporting ? 'cursor-not-allowed bg-slate-600' : 'cursor-pointer'}`}
                         >
                             <UploadIcon />
                             {isImporting ? 'Importing...' : 'Import All Data'}
