@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { Chat } from '@google/genai';
+import type { Chat, FunctionCall } from '@google/genai';
 import { GeminiService } from '../services/geminiService';
 import type { ChatMessage, Persona } from '../types';
 import FeatureLayout from './common/FeatureLayout';
 import MarkdownRenderer from '../components/MarkdownRenderer';
-import { SendIcon, TrashIcon, SettingsIcon } from '../components/Icons';
+import { SendIcon, TrashIcon, SettingsIcon, PaperclipIcon, MicIcon, Volume2Icon, VolumeOffIcon, SparklesIcon } from '../components/Icons';
 import Spinner from '../components/Spinner';
 import Tooltip from '../components/Tooltip';
-import { dbService } from '../services/dbService';
+import { dbService, StoredFile } from '../services/dbService';
 import PersonaConfigModal from './common/PersonaConfigModal';
+import FileAccessModal from './common/FileAccessModal';
+
 
 const HISTORY_SUMMARY_THRESHOLD = 10;
 const MESSAGES_TO_KEEP_AFTER_SUMMARY = 4;
@@ -19,13 +21,19 @@ const createDefaultPersona = (): Persona => ({
   systemPrompt: '',
   role: 'Helpful Assistant',
   personalityTraits: 'Friendly, knowledgeable, concise',
+  physicalTraits: '',
+  lore: '',
   characterDescription: '',
   avatarUrl: '',
   scenario: '',
+  voice: '',
 });
 
+interface ChatBotProps {
+    documents: StoredFile[];
+}
 
-const ChatBot: React.FC = () => {
+const ChatBot: React.FC<ChatBotProps> = ({ documents }) => {
     const [chat, setChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
@@ -33,18 +41,28 @@ const ChatBot: React.FC = () => {
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [activePersona, setActivePersona] = useState<Persona>(createDefaultPersona());
     const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
+    const [accessibleFiles, setAccessibleFiles] = useState<string[]>([]);
+    const [isFileModalOpen, setIsFileModalOpen] = useState(false);
+    const [isTtsEnabled, setIsTtsEnabled] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const recognitionRef = useRef<any>(null); // SpeechRecognition
     const messagesEndRef = useRef<HTMLDivElement>(null);
     
-    const constructSystemPrompt = useCallback((p: Persona): string => {
-        let prompt = p.systemPrompt || "You are a helpful AI assistant.";
-        if (p.role) prompt += `\nYour role is: ${p.role}.`;
+    const constructSystemPrompt = useCallback((p: Persona, files: string[]): string => {
+        let prompt = p.systemPrompt || `You are a helpful AI assistant.`;
+        if (p.role) prompt += `\nYour name/role is: ${p.role}.`;
         if (p.personalityTraits) prompt += `\nYour personality is: ${p.personalityTraits}.`;
-        if (p.characterDescription) prompt += `\nYour background: ${p.characterDescription}.`;
+        if (p.physicalTraits) prompt += `\nYour physical appearance: ${p.physicalTraits}.`;
+        if (p.lore) prompt += `\nYour background/lore: ${p.lore}.`;
+        if (p.characterDescription) prompt += `\nStart your first message with: ${p.characterDescription}`;
         if (p.scenario) prompt += `\nThe current scenario is: ${p.scenario}.`;
+        if (files.length > 0) {
+            prompt += `\n\n[SYSTEM NOTICE]: You have been granted access to the following files from the user's library. You can analyze them when asked:\n- ${files.join('\n- ')}`;
+          }
         return prompt.trim();
     }, []);
-
-    const initializeChat = useCallback(async () => {
+    
+    const initializeChatState = useCallback(async () => {
         try {
             const [history, savedPersonas] = await Promise.all([
                 dbService.getChatHistory(),
@@ -54,7 +72,6 @@ const ChatBot: React.FC = () => {
             let currentPersona = savedPersonas.find(p => p.isActive);
             if (!currentPersona) {
                 currentPersona = savedPersonas.length > 0 ? { ...savedPersonas[0], isActive: true } : createDefaultPersona();
-                // FIX: Add type annotation to ensure type compatibility when pushing a new persona.
                 const updatedPersonas: Persona[] = savedPersonas.map(p => ({ ...p, isActive: p.id === currentPersona!.id }));
                 if (savedPersonas.length === 0) updatedPersonas.push(currentPersona);
                 await dbService.savePersonas(updatedPersonas);
@@ -63,42 +80,51 @@ const ChatBot: React.FC = () => {
             setActivePersona(currentPersona);
             setMessages(history);
             
-            const systemInstruction = constructSystemPrompt(currentPersona);
-            const chatInstance = GeminiService.createChatWithHistory(
-                history.map(m => ({ role: m.role, parts: m.parts })),
-                systemInstruction
-            );
-            setChat(chatInstance);
         } catch (error) {
             console.error("Failed to load chat history or persona:", error);
-            const defaultPersona = createDefaultPersona();
-            setActivePersona(defaultPersona);
-            setChat(GeminiService.createChat(constructSystemPrompt(defaultPersona)));
+            setActivePersona(createDefaultPersona());
         }
-    }, [constructSystemPrompt]);
+    }, []);
 
     useEffect(() => {
-        initializeChat();
-    }, [initializeChat]);
+        initializeChatState();
+    }, [initializeChatState]);
+
+    useEffect(() => {
+        if (activePersona) {
+            const systemInstruction = constructSystemPrompt(activePersona, accessibleFiles);
+            const chatHistory = messages.map(m => ({ role: m.role, parts: m.parts }));
+            const newChat = GeminiService.createChatWithHistory(chatHistory, systemInstruction);
+            setChat(newChat);
+        }
+    }, [activePersona, accessibleFiles]);
     
     useEffect(() => {
-        // Do not save an empty initial message list
         if (messages.length > 0) {
             dbService.saveChatHistory(messages).catch(console.error);
         }
     }, [messages]);
+
+    useEffect(() => {
+        const lastMessage = messages[messages.length - 1];
+        if (isTtsEnabled && lastMessage?.role === 'model' && lastMessage.parts[0].text && !isLoading) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(lastMessage.parts[0].text);
+            if (activePersona.voice) {
+                const voice = window.speechSynthesis.getVoices().find(v => v.name === activePersona.voice);
+                if (voice) {
+                    utterance.voice = voice;
+                }
+            }
+            window.speechSynthesis.speak(utterance);
+        }
+    }, [messages, isTtsEnabled, activePersona.voice, isLoading]);
     
     const handleSavePersona = async (newPersona: Persona) => {
         const allPersonas = await dbService.getPersonas();
         const updatedPersonas = allPersonas.map(p => p.id === newPersona.id ? newPersona : p);
         await dbService.savePersonas(updatedPersonas);
         setActivePersona(newPersona);
-
-        // Re-initialize chat with new persona settings
-        const systemInstruction = constructSystemPrompt(newPersona);
-        const chatHistory = messages.map(m => ({ role: m.role, parts: m.parts }));
-        const chatInstance = GeminiService.createChatWithHistory(chatHistory, systemInstruction);
-        setChat(chatInstance);
     };
 
     const scrollToBottom = () => {
@@ -107,27 +133,77 @@ const ChatBot: React.FC = () => {
 
     useEffect(scrollToBottom, [messages]);
 
+    const handleFunctionCalls = async (functionCalls: FunctionCall[]) => {
+        for (const call of functionCalls) {
+            if (call.name === 'generateImage' && call.args) {
+                setIsLoading(true);
+                try {
+                    const fullPrompt = call.args.style
+                        ? `${call.args.prompt}, in the style of ${call.args.style}`
+                        : call.args.prompt;
+                    const images = await GeminiService.generateImage(fullPrompt, "1:1");
+                    if (images.length > 0) {
+                        const imageUrl = `data:image/jpeg;base64,${images[0]}`;
+                        setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }], imageUrl }]);
+                    }
+                } catch (error) {
+                    console.error("Image generation tool failed:", error);
+                    setMessages(prev => [...prev, { role: 'model', parts: [{ text: "Sorry, I couldn't generate the image right now." }] }]);
+                } finally {
+                    setIsLoading(false);
+                }
+            }
+        }
+    };
+
     const handleSend = async () => {
         if (!input.trim() || !chat || isLoading || isSummarizing) return;
 
         const userMessage: ChatMessage = { role: 'user', parts: [{ text: input }] };
         setMessages(prev => [...prev, userMessage]);
+        const currentInput = input;
         setInput('');
         setIsLoading(true);
 
+        if (currentInput.toLowerCase().startsWith('/imagine ')) {
+            try {
+                const prompt = currentInput.substring(8).trim();
+                const images = await GeminiService.generateImage(prompt, "1:1");
+                if (images.length > 0) {
+                    const imageUrl = `data:image/jpeg;base64,${images[0]}`;
+                    setMessages(prev => [...prev, { role: 'model', parts: [{text: ''}], imageUrl }]);
+                }
+            } catch (error) {
+                console.error("Image generation command failed:", error);
+                setMessages(prev => [...prev, { role: 'model', parts: [{ text: "Sorry, I couldn't generate an image with that prompt." }] }]);
+            } finally {
+                setIsLoading(false);
+            }
+            return;
+        }
+
         try {
-            const result = await chat.sendMessageStream({ message: input });
+            const result = await chat.sendMessageStream({ message: currentInput });
             let text = '';
+            let accumulatedFunctionCalls: FunctionCall[] = [];
             setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
             for await (const chunk of result) {
                 text += chunk.text;
+                if (chunk.functionCalls) {
+                    accumulatedFunctionCalls.push(...chunk.functionCalls);
+                }
                 setMessages(prev => {
                     const newMessages = [...prev];
                     newMessages[newMessages.length - 1].parts[0].text = text;
                     return newMessages;
                 });
             }
+
+            if (accumulatedFunctionCalls.length > 0) {
+                handleFunctionCalls(accumulatedFunctionCalls);
+            }
+
         } catch (error) {
             console.error(error);
              setMessages(prev => {
@@ -156,7 +232,6 @@ const ChatBot: React.FC = () => {
             }
             
             const summary = await GeminiService.summarizeConversation(historyToSummarize);
-            // We only take the most recent messages for the AI's "short-term" memory after the summary.
             const recentMessagesForContext = messages.slice(messages.length - MESSAGES_TO_KEEP_AFTER_SUMMARY);
 
             const newChatHistory = [
@@ -165,11 +240,10 @@ const ChatBot: React.FC = () => {
                 ...recentMessagesForContext.map(m => ({ role: m.role, parts: m.parts })),
             ];
             
-            const systemInstruction = constructSystemPrompt(activePersona);
+            const systemInstruction = constructSystemPrompt(activePersona, accessibleFiles);
             const newChat = GeminiService.createChatWithHistory(newChatHistory, systemInstruction);
             setChat(newChat);
 
-            // Add a notification for the user, but DO NOT change their visible history.
             const summaryNotification: ChatMessage = { role: 'model', parts: [{ text: `*For brevity, I've summarized our conversation for my own context. Your full history is still visible to you.*` }] };
             setMessages(prev => [...prev, summaryNotification]);
             
@@ -180,23 +254,58 @@ const ChatBot: React.FC = () => {
         } finally {
             setIsSummarizing(false);
         }
-    }, [chat, messages, isLoading, constructSystemPrompt, activePersona]);
+    }, [chat, messages, isLoading, constructSystemPrompt, activePersona, accessibleFiles]);
     
     const handleClearHistory = async () => {
         if (window.confirm("Are you sure you want to clear the entire chat history? This cannot be undone.")) {
             try {
                 await dbService.clearChatHistory();
                 setMessages([]);
-                setChat(GeminiService.createChat(constructSystemPrompt(activePersona)));
+                 const systemInstruction = constructSystemPrompt(activePersona, accessibleFiles);
+                setChat(GeminiService.createChat(systemInstruction));
             } catch (error) {
                 console.error("Failed to clear chat history:", error);
             }
         }
     };
 
+    const handleToggleListening = () => {
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+        } else {
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("Speech recognition is not supported in this browser.");
+                return;
+            }
+            recognitionRef.current = new SpeechRecognition();
+            recognitionRef.current.continuous = true;
+            recognitionRef.current.interimResults = true;
+            recognitionRef.current.onstart = () => setIsListening(true);
+            recognitionRef.current.onend = () => setIsListening(false);
+            recognitionRef.current.onerror = (event: any) => {
+                console.error("Speech recognition error", event.error);
+                setIsListening(false);
+            };
+            recognitionRef.current.onresult = (event: any) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+                setInput(prev => prev + finalTranscript);
+            };
+            recognitionRef.current.start();
+        }
+    };
+
     useEffect(() => {
         if (messages.length >= HISTORY_SUMMARY_THRESHOLD && !isSummarizing && !isLoading) {
-            // Check if the last message isn't already a summary notification to avoid loops
             const lastMessageText = messages[messages.length-1]?.parts[0]?.text || '';
             if(!lastMessageText.includes("summarized our conversation")) {
                 summarizeHistory();
@@ -218,11 +327,15 @@ const ChatBot: React.FC = () => {
                                 <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold">{activePersona.role ? activePersona.role.charAt(0) : 'G'}</div>
                             )}
                             <div className={`p-4 rounded-xl max-w-lg ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
-                                <MarkdownRenderer content={msg.parts[0].text} />
+                                {msg.imageUrl ? (
+                                    <img src={msg.imageUrl} alt="Generated by AI" className="rounded-lg" />
+                                ) : (
+                                    <MarkdownRenderer content={msg.parts[0].text} />
+                                )}
                             </div>
                         </div>
                     ))}
-                    {isLoading && (
+                    {isLoading && !messages[messages.length - 1]?.imageUrl && (
                         <div className="flex justify-start items-start gap-3">
                              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold">{activePersona.role ? activePersona.role.charAt(0) : 'G'}</div>
                             <div className="p-4 rounded-xl bg-slate-700">
@@ -232,14 +345,33 @@ const ChatBot: React.FC = () => {
                     )}
                     <div ref={messagesEndRef} />
                 </div>
-                <div className="mt-6 flex items-center space-x-2">
+                {accessibleFiles.length > 0 && (
+                    <div className="mt-2 text-xs text-slate-400">
+                        <span className="font-semibold">Context files:</span> {accessibleFiles.join(', ')}
+                    </div>
+                )}
+                <div className="mt-2 flex items-center space-x-2">
                     <Tooltip text="Clear chat history. This cannot be undone.">
                         <button onClick={handleClearHistory} disabled={isLoading || isSummarizing || messages.length === 0} className="bg-slate-700 hover:bg-red-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><TrashIcon /></button>
                     </Tooltip>
                     <Tooltip text="Configure the chatbot's persona and personality.">
                         <button onClick={() => setIsPersonaModalOpen(true)} disabled={isLoading || isSummarizing} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><SettingsIcon /></button>
                     </Tooltip>
+                     <Tooltip text="Grant AI access to files from your library for this chat session.">
+                        <button onClick={() => setIsFileModalOpen(true)} disabled={isLoading || isSummarizing} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><PaperclipIcon /></button>
+                    </Tooltip>
+                    <Tooltip text="Generate an image with '/imagine [prompt]'">
+                        <button onClick={() => setInput('/imagine ')} disabled={isLoading || isSummarizing} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><SparklesIcon /></button>
+                    </Tooltip>
                     <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder={isSummarizing ? "Summarizing..." : "Type your message..."} rows={1} className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" disabled={isSummarizing} />
+                    <Tooltip text="Use Voice Input">
+                        <button onClick={handleToggleListening} disabled={isLoading || isSummarizing} className={`p-3 rounded-full transition-colors disabled:opacity-50 ${isListening ? 'bg-red-600 animate-pulse' : 'bg-slate-700 hover:bg-blue-600/50'}`}><MicIcon /></button>
+                    </Tooltip>
+                    <Tooltip text={isTtsEnabled ? "Disable Character Voice" : "Enable Character Voice"}>
+                        <button onClick={() => setIsTtsEnabled(prev => !prev)} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors">
+                            {isTtsEnabled ? <Volume2Icon /> : <VolumeOffIcon />}
+                        </button>
+                    </Tooltip>
                     <Tooltip text="Send your message to the chatbot. You can also press Enter (without Shift) to send." position="top">
                         <button onClick={handleSend} disabled={isLoading || !input.trim() || isSummarizing} className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white p-3 rounded-full transition-colors"><SendIcon /></button>
                     </Tooltip>
@@ -250,6 +382,13 @@ const ChatBot: React.FC = () => {
                 onClose={() => setIsPersonaModalOpen(false)}
                 initialPersona={activePersona}
                 onSave={handleSavePersona}
+            />
+            <FileAccessModal
+                isOpen={isFileModalOpen}
+                onClose={() => setIsFileModalOpen(false)}
+                availableFiles={documents.filter(d => !d.isArchived)}
+                selectedFiles={accessibleFiles}
+                onSelectionChange={setAccessibleFiles}
             />
         </FeatureLayout>
     );

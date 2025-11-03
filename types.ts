@@ -5,17 +5,21 @@ export interface ChatMessage {
   role: 'user' | 'model';
   parts: { text: string }[];
   sources?: GroundingSource[];
+  imageUrl?: string;
 }
 
 export interface Persona {
   id: string;
   isActive?: boolean;
   systemPrompt: string;
-  role: string;
+  role: string; // Character's Name
   personalityTraits: string;
-  characterDescription: string;
-  avatarUrl: string;
+  physicalTraits: string; // New
+  lore: string; // New
+  characterDescription: string; // A short summary, greeting, or first message
+  avatarUrl: string; // Can be a web URL or a data URL
   scenario: string;
+  voice?: string; // Voice URI for speech synthesis
 }
 
 export interface GroundingSource {

@@ -92,7 +92,7 @@ const App: React.FC = () => {
     const props: any = { key: feature.id };
     
     // Pass shared document state to all features that might need to read or write to the library.
-    if (['live', 'file-library', 'image-analysis', 'image-gen', 'video-analysis', 'audio-transcription', 'grounding', 'reasoning'].includes(feature.id)) {
+    if (['live', 'file-library', 'image-analysis', 'image-gen', 'video-analysis', 'audio-transcription', 'grounding', 'reasoning', 'chat'].includes(feature.id)) {
         props.documents = documents;
         props.setDocuments = setDocuments;
     }

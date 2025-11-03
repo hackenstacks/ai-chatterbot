@@ -9,6 +9,49 @@ import PasswordPromptModal from '../components/PasswordPromptModal';
 
 const voices = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
 
+// Helper to find JSON in a PNG ArrayBuffer (for TavernAI cards)
+const findJsonInPng = (arrayBuffer: ArrayBuffer, keyword: string): string | null => {
+    const uint8 = new Uint8Array(arrayBuffer);
+    const keywordBytes = new TextEncoder().encode(keyword);
+    
+    for (let i = 0; i < uint8.length - keywordBytes.length; i++) {
+        let found = true;
+        for (let j = 0; j < keywordBytes.length; j++) {
+            if (uint8[i + j] !== keywordBytes[j]) {
+                found = false;
+                break;
+            }
+        }
+        
+        if (found) {
+            const startOffset = i + keywordBytes.length;
+            let firstBrace = -1;
+            let braceCount = 0;
+            
+            for (let k = startOffset; k < uint8.length; k++) {
+                if (uint8[k] === 123 /* '{' */) {
+                    if (firstBrace === -1) firstBrace = k;
+                    braceCount++;
+                } else if (uint8[k] === 125 /* '}' */) {
+                    if (firstBrace !== -1) {
+                         braceCount--;
+                        if (braceCount === 0) {
+                            const jsonBytes = uint8.slice(firstBrace, k + 1);
+                            try {
+                                return new TextDecoder('utf-8').decode(jsonBytes);
+                            } catch (e) {
+                                firstBrace = -1; // Reset and continue searching
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return null;
+};
+
+
 const Settings: React.FC = () => {
     const [isExporting, setIsExporting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
@@ -139,8 +182,10 @@ const Settings: React.FC = () => {
     const handleAddNewPersona = () => {
         setEditingPersona({
             id: crypto.randomUUID(),
-            role: 'New Persona',
+            role: 'New Character',
             personalityTraits: '',
+            physicalTraits: '',
+            lore: '',
             characterDescription: '',
             scenario: '',
             systemPrompt: '',
@@ -169,7 +214,7 @@ const Settings: React.FC = () => {
     };
 
     const handleDeletePersona = async (personaId: string) => {
-        if (!window.confirm("Are you sure you want to delete this persona?")) return;
+        if (!window.confirm("Are you sure you want to delete this character?")) return;
 
         const personaToDelete = personas.find(p => p.id === personaId);
         const updatedPersonas = personas.filter(p => p.id !== personaId);
@@ -202,33 +247,93 @@ const Settings: React.FC = () => {
         URL.revokeObjectURL(url);
     };
 
-    const handleImportPersonas = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImportCharacter = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const imported = JSON.parse(e.target?.result as string) as Persona[];
-                if (!Array.isArray(imported) || !imported.every(p => p.id && p.role)) {
-                    throw new Error("Invalid persona file format.");
+        setError(null);
+        setSuccess(null);
+
+        try {
+            let newPersona: Partial<Persona> | null = null;
+            if (file.name.endsWith('.json')) {
+                const content = await file.text();
+                const data = JSON.parse(content);
+                // Simple check for TavernAI format vs own format
+                if (data.name || data.char_name) {
+                    newPersona = {
+                        role: data.name || data.char_name || '',
+                        characterDescription: data.first_mes || data.char_greeting || '',
+                        personalityTraits: data.personality || data.char_persona || '',
+                        scenario: data.scenario || '',
+                        lore: data.description || '',
+                    };
+                } else if (Array.isArray(data)) {
+                    // It's a bulk export from this app
+                    const importedPersonas = data as Persona[];
+                    const combined = [...personas];
+                    let newCount = 0;
+                    importedPersonas.forEach(p => {
+                        if (p.id && p.role && !combined.some(existing => existing.id === p.id)) {
+                             combined.push({ ...p, isActive: false });
+                             newCount++;
+                        }
+                    });
+                     setPersonas(combined);
+                     await dbService.savePersonas(combined);
+                     setSuccess(`${newCount} new characters imported successfully!`);
+                     return; // Early exit for bulk import
                 }
-                const combined = [...personas];
-                imported.forEach(p => {
-                    if (!combined.some(existing => existing.id === p.id)) {
-                        combined.push({ ...p, isActive: false });
-                    }
-                });
-                setPersonas(combined);
-                await dbService.savePersonas(combined);
-                setSuccess(`${imported.length} personas imported successfully!`);
-            } catch (err: any) {
-                setError(`Import failed: ${err.message}`);
+                else {
+                    newPersona = data; // Assume it's our format
+                }
+            } else if (file.name.endsWith('.png')) {
+                const buffer = await file.arrayBuffer();
+                const jsonString = findJsonInPng(buffer, 'chara');
+                if (jsonString) {
+                    const data = JSON.parse(jsonString);
+                    newPersona = {
+                        role: data.name || '',
+                        characterDescription: data.first_mes || '',
+                        personalityTraits: data.personality || '',
+                        scenario: data.scenario || '',
+                        lore: data.description || '',
+                    };
+                } else {
+                    throw new Error("Could not find character data in PNG file.");
+                }
+            } else {
+                throw new Error("Unsupported file type. Please use .json or .png character cards.");
             }
-        };
-        reader.readAsText(file);
-        event.target.value = '';
+
+            if (newPersona) {
+                const completePersona: Persona = {
+                    id: crypto.randomUUID(),
+                    isActive: false,
+                    role: newPersona.role || 'Imported Character',
+                    personalityTraits: newPersona.personalityTraits || '',
+                    physicalTraits: newPersona.physicalTraits || '',
+                    lore: newPersona.lore || '',
+                    characterDescription: newPersona.characterDescription || '',
+                    scenario: newPersona.scenario || '',
+                    systemPrompt: newPersona.systemPrompt || '',
+                    avatarUrl: newPersona.avatarUrl || '',
+                };
+
+                if (!personas.some(p => p.role === completePersona.role)) {
+                    await handleSavePersona(completePersona);
+                    setSuccess(`Character "${completePersona.role}" imported successfully!`);
+                } else {
+                    setError(`A character named "${completePersona.role}" already exists.`);
+                }
+            }
+        } catch (err: any) {
+            setError(`Import failed: ${err.message}`);
+        } finally {
+            event.target.value = '';
+        }
     };
+
 
     const handleSharePersona = async (persona: Persona) => {
         try {
@@ -262,28 +367,30 @@ const Settings: React.FC = () => {
         <FeatureLayout title="Settings" description="Manage your application data, chatbot personas, and voice preferences.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-slate-800/50 rounded-lg p-6 flex flex-col h-96">
-                    <h2 className="text-xl font-bold mb-3 text-white">Persona Management</h2>
+                    <h2 className="text-xl font-bold mb-3 text-white">Character Management</h2>
                     <div className="flex-grow overflow-y-auto pr-2 space-y-2">
                         {personas.length > 0 ? personas.map(p => (
-                            <div key={p.id} className={`p-3 rounded-lg flex items-center justify-between ${p.isActive ? 'bg-blue-900/50 ring-1 ring-blue-500' : 'bg-slate-700/50'}`}>
-                                <div>
-                                    <p className="font-semibold">{p.role}</p>
-                                    <p className="text-xs text-slate-400 truncate max-w-xs">{p.personalityTraits}</p>
+                            <div key={p.id} onClick={() => handleEditPersona(p)} className={`p-3 rounded-lg flex items-center justify-between cursor-pointer group ${p.isActive ? 'bg-blue-900/50 ring-1 ring-blue-500' : 'bg-slate-700/50 hover:bg-slate-700'}`}>
+                                <div className="flex items-center space-x-3">
+                                    {p.avatarUrl ? <img src={p.avatarUrl} alt={p.role} className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center font-bold">{p.role.charAt(0)}</div>}
+                                    <div>
+                                        <p className="font-semibold">{p.role}</p>
+                                        <p className="text-xs text-slate-400 truncate max-w-xs">{p.personalityTraits}</p>
+                                    </div>
                                 </div>
-                                <div className="flex items-center space-x-1">
+                                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                                     {!p.isActive && <button onClick={() => handleSetActive(p.id)} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-2 rounded">Apply</button>}
                                     <button onClick={() => handleSharePersona(p)} className="p-2 hover:bg-slate-600 rounded" title="Share Persona"><ShareIcon/></button>
-                                    <button onClick={() => handleEditPersona(p)} className="p-2 hover:bg-slate-600 rounded" title="Edit Persona"><EditIcon/></button>
                                     <button onClick={() => handleDeletePersona(p.id)} className="p-2 hover:bg-red-600 rounded" title="Delete Persona"><TrashIcon/></button>
                                 </div>
                             </div>
-                        )) : <p className="text-slate-500 text-center mt-8">No personas created yet.</p>}
+                        )) : <p className="text-slate-500 text-center mt-8">No characters created yet.</p>}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
                         <button onClick={handleAddNewPersona} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Create New</button>
-                        <button onClick={handleExportPersonas} disabled={personas.length === 0} className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-lg text-sm disabled:opacity-50">Export</button>
-                        <input type="file" id="import-personas" accept=".json" onChange={handleImportPersonas} className="hidden" />
-                        <label htmlFor="import-personas" className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-lg text-sm cursor-pointer text-center">Import</label>
+                        <button onClick={handleExportPersonas} disabled={personas.length === 0} className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-lg text-sm disabled:opacity-50">Export All</button>
+                        <input type="file" id="import-character" accept=".json,.png" onChange={handleImportCharacter} className="hidden" />
+                        <label htmlFor="import-character" className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-lg text-sm cursor-pointer text-center">Import</label>
                     </div>
                 </div>
 

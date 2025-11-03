@@ -18,11 +18,31 @@ type LiveCallbacks = {
     onclose?: (e: CloseEvent) => void;
 };
 
+const imageGenerationTool: FunctionDeclaration = {
+    name: 'generateImage',
+    parameters: {
+        type: Type.OBJECT,
+        description: 'Generates an image based on a textual description, often used when the user asks to "draw", "create", "imagine", or "generate" an image.',
+        properties: {
+            prompt: { type: Type.STRING, description: 'A detailed description of the image to generate.' },
+            style: { type: Type.STRING, description: 'The artistic style, e.g., "photorealistic", "anime", "cartoon".' },
+        },
+        required: ['prompt'],
+    },
+};
+
+const chatTools: { functionDeclarations: FunctionDeclaration[] }[] = [
+    { functionDeclarations: [imageGenerationTool] }
+];
+
 export const GeminiService = {
     createChat: (systemInstruction?: string): Chat => {
         return getAi().chats.create({
             model: 'gemini-2.5-flash',
-            ...(systemInstruction && { config: { systemInstruction } }),
+            config: { 
+                ...(systemInstruction && { systemInstruction }),
+                tools: chatTools,
+            },
         });
     },
 
@@ -30,7 +50,10 @@ export const GeminiService = {
         return getAi().chats.create({
             model: 'gemini-2.5-flash',
             history: history,
-            ...(systemInstruction && { config: { systemInstruction } }),
+            config: { 
+                ...(systemInstruction && { systemInstruction }),
+                tools: chatTools,
+            },
         });
     },
 
@@ -52,6 +75,40 @@ export const GeminiService = {
         });
         
         return response.text.trim();
+    },
+
+    createPersonaFromText: async (description: string): Promise<Partial<Persona>> => {
+        const prompt = `Analyze the following character description and extract the key attributes into the specified JSON format. If a field is not mentioned, leave it as an empty string.
+
+Character Description:
+---
+${description}
+---
+
+Fill out the following JSON object based on the description:
+`;
+
+        const response = await getAi().models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        role: { type: Type.STRING, description: "The character's name or primary role." },
+                        personalityTraits: { type: Type.STRING, description: "A comma-separated list of key personality traits." },
+                        physicalTraits: { type: Type.STRING, description: "A summary of the character's physical appearance." },
+                        lore: { type: Type.STRING, description: "The character's background, history, or lore." },
+                        characterDescription: { type: Type.STRING, description: "A short greeting or first message from the character." },
+                        scenario: { type: Type.STRING, description: "The context or scenario for the conversation." },
+                    }
+                }
+            }
+        });
+        
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText);
     },
 
     summarizeConversation: async (history: Content[]): Promise<string> => {
