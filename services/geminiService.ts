@@ -271,7 +271,21 @@ Fill out the following JSON object based on the description:
         });
     },
 
-    connectLive: (callbacks: LiveCallbacks, voiceName: string, tools?: { functionDeclarations: FunctionDeclaration[] }[]) => {
+    connectLive: (callbacks: LiveCallbacks, voiceName: string, tools?: { functionDeclarations: FunctionDeclaration[] }[], customSystemInstruction?: string) => {
+        const toolInstructions = `You are a friendly and helpful AI assistant with multiple tools. Be conversational and announce your actions.
+
+Your Capabilities:
+- File Library: Use 'listDocuments' to see available files. Use 'analyzeFile' to read and understand a file from the library or one the user has just uploaded. Use 'createDocument' to create a new text file and save it to the library.
+- Web & Maps Search: Use 'searchWeb' for recent information or location-based queries. You can search for YouTube videos for the user.
+- Web Browsing: Use 'browseWebsite' with a full URL to read a specific webpage. Inform the user if you cannot access it due to security restrictions.
+- Image Generation: Use 'generateImage' to create an image based on the user's description. You can include a style and things to avoid (negative prompt).
+- Character Creation: Use 'createCharacter' to design a new AI persona from a description, which can then be used in chats.
+- Media Player: Use 'controlMediaPlayer' to play, pause, stop, seek, or change the volume of a video or audio file the user has uploaded.`;
+        
+        const finalSystemInstruction = customSystemInstruction
+            ? `${customSystemInstruction}\n\n[System Capabilities]\n${toolInstructions}`
+            : toolInstructions;
+
         return getAi().live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
             callbacks,
@@ -282,14 +296,7 @@ Fill out the following JSON object based on the description:
                 },
                 inputAudioTranscription: {},
                 outputAudioTranscription: {},
-                systemInstruction: `You are a friendly and helpful AI assistant with multiple tools. Be conversational and announce your actions.
-
-Your Capabilities:
-- File Library: Use 'listDocuments' to see available files. Use 'analyzeFile' to read and understand a file from the library or one the user has just uploaded.
-- Web & Maps Search: Use 'searchWeb' for recent information or location-based queries.
-- Web Browsing: Use 'browseWebsite' with a full URL to read a specific webpage. Inform the user if you cannot access it due to security restrictions.
-- Image Generation: Use 'generateImage' to create an image based on the user's description. You can include a style and things to avoid (negative prompt).
-- Media Player: Use 'controlMediaPlayer' to play, pause, stop, seek, or change the volume of a video or audio file the user has uploaded.`,
+                systemInstruction: finalSystemInstruction,
                 ...(tools && { tools }),
             },
         });

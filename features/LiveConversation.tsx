@@ -6,7 +6,7 @@ import FeatureLayout from './common/FeatureLayout';
 import { decode, decodeAudioData, createPcmBlob, fileToBase64, formatBytes, base64ToBlob, readFileContent, encode } from '../utils/helpers';
 import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon } from '../components/Icons';
 import useGeolocation from '../hooks/useGeolocation';
-import type { GroundingSource } from '../types';
+import type { GroundingSource, Persona } from '../types';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import Tooltip from '../components/Tooltip';
 import { dbService, StoredFile } from '../services/dbService';
@@ -36,7 +36,7 @@ const functionDeclarations: FunctionDeclaration[] = [
         name: 'searchWeb',
         parameters: {
             type: Type.OBJECT,
-            description: 'Search Google for recent and relevant information.',
+            description: 'Search Google for recent and relevant information, including YouTube videos.',
             properties: {
                 query: { type: Type.STRING, description: 'The search query.' },
                 useMaps: { type: Type.BOOLEAN, description: 'Set to true to also search Google Maps. Requires user location.' }
@@ -89,6 +89,34 @@ const functionDeclarations: FunctionDeclaration[] = [
         },
     },
     {
+        name: 'createDocument',
+        parameters: {
+            type: Type.OBJECT,
+            description: 'Creates a new text document with the given content and saves it to the file library.',
+            properties: {
+                fileName: { type: Type.STRING, description: 'The name of the file to create, e.g., "meeting-notes.txt".' },
+                content: { type: Type.STRING, description: 'The text content to write into the file.' },
+            },
+            required: ['fileName', 'content'],
+        },
+    },
+    {
+        name: 'createCharacter',
+        parameters: {
+            type: Type.OBJECT,
+            description: 'Creates a new character persona and saves it for future use in chats.',
+            properties: {
+                role: { type: Type.STRING, description: "The character's name or primary role." },
+                personalityTraits: { type: Type.STRING, description: "A comma-separated list of key personality traits." },
+                physicalTraits: { type: Type.STRING, description: "A summary of the character's physical appearance." },
+                lore: { type: Type.STRING, description: "The character's background, history, or lore." },
+                characterDescription: { type: Type.STRING, description: "A short greeting or first message from the character." },
+                scenario: { type: Type.STRING, description: "The context or scenario for the conversation." },
+            },
+            required: ['role', 'personalityTraits', 'characterDescription'],
+        },
+    },
+    {
         name: 'controlMediaPlayer',
         parameters: {
             type: Type.OBJECT,
@@ -122,10 +150,13 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     const [fileUrl, setFileUrl] = useState<string | null>(null);
     const [analysisResult, setAnalysisResult] = useState<string | null>(null);
     const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+    const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
     const [sources, setSources] = useState<GroundingSource[]>([]);
     const [isProcessingTool, setIsProcessingTool] = useState(false);
     const [micGain, setMicGain] = useState(1.0);
     const [outputGain, setOutputGain] = useState(1.0);
+    const [personas, setPersonas] = useState<Persona[]>([]);
+    const [activePersonaId, setActivePersonaId] = useState<string>('default');
 
     const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -140,6 +171,10 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     const nextStartTimeRef = useRef(0);
     const sourcesRef = useRef(new Set<AudioBufferSourceNode>());
     
+    useEffect(() => {
+        dbService.getPersonas().then(setPersonas).catch(console.error);
+    }, []);
+
     useEffect(() => {
         if (micGainNodeRef.current) {
             micGainNodeRef.current.gain.value = micGain;
@@ -156,6 +191,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         setAnalysisResult(null);
         setSources([]);
         setGeneratedImageUrl(null);
+        setYoutubeVideoId(null);
     };
 
     const handleStopConversation = useCallback(() => {
@@ -344,6 +380,15 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                 type: chunk.web ? 'web' : 'maps'
                             })).filter((s: GroundingSource) => s.uri !== '#');
                             setSources(newSources);
+
+                            const youtubeSource = newSources.find(s => s.uri.includes('youtube.com/watch'));
+                            if (youtubeSource) {
+                                try {
+                                    const url = new URL(youtubeSource.uri);
+                                    const videoId = url.searchParams.get('v');
+                                    if (videoId) setYoutubeVideoId(videoId);
+                                } catch (e) { console.error("Error parsing YouTube URL", e); }
+                            }
                         }
                         setAnalysisResult(searchResultText);
                         result = { status: 'success', summary: searchResultText };
@@ -371,6 +416,36 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                             result = { status: 'success', message: "The file library is currently empty." };
                         } else {
                             result = { status: 'success', files: activeDocuments.map(f => f.name) };
+                        }
+                        break;
+
+                    case 'createDocument':
+                        await saveToLibrary(args.content, args.fileName, 'text');
+                        result = { status: 'success', message: `Document '${args.fileName}' saved to the library.` };
+                        break;
+                    
+                    case 'createCharacter':
+                        const newPersona: Persona = {
+                            id: crypto.randomUUID(),
+                            isActive: false, // Don't make it active immediately
+                            role: args.role || 'New AI Character',
+                            personalityTraits: args.personalityTraits || '',
+                            physicalTraits: args.physicalTraits || '',
+                            lore: args.lore || '',
+                            characterDescription: args.characterDescription || '',
+                            scenario: args.scenario || '',
+                            systemPrompt: '', 
+                            avatarUrl: '', 
+                            voice: '',
+                        };
+                        const currentPersonas = await dbService.getPersonas();
+                        if (currentPersonas.some(p => p.role === newPersona.role)) {
+                            result = { status: 'error', message: `A character named ${newPersona.role} already exists.` };
+                        } else {
+                            const updatedPersonas = [...currentPersonas, newPersona];
+                            await dbService.savePersonas(updatedPersonas);
+                            setPersonas(updatedPersonas); // Update local state
+                            result = { status: 'success', message: `Character ${newPersona.role} created successfully.` };
                         }
                         break;
 
@@ -477,7 +552,20 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
             outputGainNodeRef.current = outputGainNode;
             outputGainNode.connect(outputAudioContext.destination);
 
-            const voiceName = await dbService.getVoicePreference() || 'Zephyr';
+            const activePersona = personas.find(p => p.id === activePersonaId);
+            const voiceName = activePersona?.voice || await dbService.getVoicePreference() || 'Zephyr';
+            
+            let systemInstruction = '';
+            if (activePersona) {
+                systemInstruction = [
+                    activePersona.systemPrompt,
+                    `Your name/role is: ${activePersona.role}.`,
+                    `Your personality is: ${activePersona.personalityTraits}.`,
+                    activePersona.physicalTraits ? `Your physical appearance: ${activePersona.physicalTraits}.` : '',
+                    activePersona.lore ? `Your background/lore: ${activePersona.lore}.` : '',
+                    activePersona.scenario ? `The current scenario is: ${activePersona.scenario}.` : ''
+                ].filter(Boolean).join('\n');
+            }
             
             const sessionPromise = GeminiService.connectLive({
                 onopen: () => {
@@ -554,7 +642,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                         setConnectionState('closed');
                     }
                 },
-            }, voiceName, [{ functionDeclarations }]);
+            }, voiceName, [{ functionDeclarations }], systemInstruction);
 
             sessionPromiseRef.current = sessionPromise;
 
@@ -562,7 +650,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
             console.error("Failed to start conversation:", error);
             setConnectionState('error');
         }
-    }, [reconnectAttempts, handleStopConversation, documents, micGain, outputGain]);
+    }, [reconnectAttempts, handleStopConversation, documents, micGain, outputGain, personas, activePersonaId]);
     
     useEffect(() => {
         return () => { handleStopConversation(); };
@@ -578,6 +666,20 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     
     const renderOutput = () => {
         if (isProcessingTool) return <p className="text-slate-400">Processing request...</p>;
+        if (youtubeVideoId) return (
+            <div className="aspect-video">
+                <iframe
+                    width="100%"
+                    height="100%"
+                    src={`https://www.youtube.com/embed/${youtubeVideoId}?autoplay=1`}
+                    title="YouTube video player"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="rounded-lg"
+                ></iframe>
+            </div>
+        );
         if (generatedImageUrl) return (
             <div className="relative group">
                 <img src={generatedImageUrl} alt="Generated by AI" className="max-w-full max-h-full object-contain rounded-lg mx-auto" />
@@ -631,12 +733,14 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                 <label htmlFor="load-session" className={`bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-center ${isBusy ? 'cursor-not-allowed bg-slate-600' : 'cursor-pointer hover:bg-blue-700'}`}>Load Session</label>
                              </Tooltip>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-800/50 p-3 rounded-lg">
-                            <div className="flex items-center space-x-2 text-slate-300">
-                                <Tooltip text="Microphone Input Volume"><MicIcon /></Tooltip>
-                                <input type="range" id="mic-gain" min="0" max="1.5" step="0.05" value={micGain} onChange={e => setMicGain(parseFloat(e.target.value))} className="w-full" />
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-800/50 p-3 rounded-lg">
+                            <div>
+                                <select id="persona-select" value={activePersonaId} onChange={e => setActivePersonaId(e.target.value)} disabled={connectionState === 'connected'} className="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50">
+                                    <option value="default">Default Assistant</option>
+                                    {personas.map(p => <option key={p.id} value={p.id}>{p.role}</option>)}
+                                </select>
                             </div>
-                            <div className="flex items-center space-x-2 text-slate-300">
+                             <div className="flex items-center space-x-2 text-slate-300">
                                 <Tooltip text="AI Output Volume"><Volume2Icon /></Tooltip>
                                 <input type="range" id="output-gain" min="0" max="1.5" step="0.05" value={outputGain} onChange={e => setOutputGain(parseFloat(e.target.value))} className="w-full" />
                             </div>
