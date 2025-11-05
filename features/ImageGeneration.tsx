@@ -5,6 +5,8 @@ import Spinner from '../components/Spinner';
 import { SaveIcon } from '../components/Icons';
 import { dbService, StoredFile } from '../services/dbService';
 import { base64ToBlob } from '../utils/helpers';
+import ErrorDisplay from '../components/ErrorDisplay';
+import { parseError, FormattedError } from '../utils/errorUtils';
 
 interface ImageGenerationProps {
     documents: StoredFile[];
@@ -28,15 +30,15 @@ const ImageGeneration: React.FC<ImageGenerationProps> = ({ documents, setDocumen
     const [selectedStyle, setSelectedStyle] = useState<string>(styles[1].name);
     const [generatedImages, setGeneratedImages] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string>('');
+    const [error, setError] = useState<FormattedError | null>(null);
 
     const handleGenerate = async () => {
         if (!prompt) {
-            setError('Please enter a prompt.');
+            setError(parseError(new Error('Please enter a prompt.')));
             return;
         }
         setIsLoading(true);
-        setError('');
+        setError(null);
         setGeneratedImages([]);
         try {
             const styleKeywords = styles.find(s => s.name === selectedStyle)?.keywords || "";
@@ -46,7 +48,7 @@ const ImageGeneration: React.FC<ImageGenerationProps> = ({ documents, setDocumen
             setGeneratedImages(imagesBase64);
         } catch (err: any) {
             console.error(err);
-            setError('Failed to generate image. ' + err.message);
+            setError(parseError(err));
         } finally {
             setIsLoading(false);
         }
@@ -143,7 +145,7 @@ const ImageGeneration: React.FC<ImageGenerationProps> = ({ documents, setDocumen
 
                 <div className="flex-grow mt-8 flex items-center justify-center bg-slate-800/50 rounded-lg p-4 min-h-[50vh]">
                     {isLoading && <Spinner text="Generating image... this can take a moment." />}
-                    {error && <p className="text-red-400">{error}</p>}
+                    {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
                     {!isLoading && !error && generatedImages.length === 0 && (
                          <p className="text-slate-500">Your generated image will appear here.</p>
                     )}

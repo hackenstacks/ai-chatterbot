@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { GeminiService } from '../services/geminiService';
 import { fileToBase64, formatBytes, encode } from '../utils/helpers';
@@ -6,6 +5,8 @@ import FeatureLayout from './common/FeatureLayout';
 import Spinner from '../components/Spinner';
 import { dbService, StoredFile } from '../services/dbService';
 import { SaveIcon } from '../components/Icons';
+import ErrorDisplay from '../components/ErrorDisplay';
+import { parseError, FormattedError } from '../utils/errorUtils';
 
 interface AudioTranscriptionProps {
     documents: StoredFile[];
@@ -16,7 +17,7 @@ const AudioTranscription: React.FC<AudioTranscriptionProps> = ({ documents, setD
     const [file, setFile] = useState<File | null>(null);
     const [result, setResult] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string>('');
+    const [error, setError] = useState<FormattedError | null>(null);
     const audioRef = React.useRef<HTMLAudioElement>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -24,7 +25,7 @@ const AudioTranscription: React.FC<AudioTranscriptionProps> = ({ documents, setD
         if (selectedFile) {
             setFile(selectedFile);
             setResult('');
-            setError('');
+            setError(null);
             if (audioRef.current) {
                 audioRef.current.src = URL.createObjectURL(selectedFile);
             }
@@ -33,11 +34,11 @@ const AudioTranscription: React.FC<AudioTranscriptionProps> = ({ documents, setD
 
     const handleTranscribe = async () => {
         if (!file) {
-            setError('Please select an audio file.');
+            setError(parseError(new Error('Please select an audio file.')));
             return;
         }
         setIsLoading(true);
-        setError('');
+        setError(null);
         setResult('');
         try {
             const audioBase64 = await fileToBase64(file);
@@ -45,7 +46,7 @@ const AudioTranscription: React.FC<AudioTranscriptionProps> = ({ documents, setD
             setResult(response.text);
         } catch (err: any) {
             console.error(err);
-            setError('Failed to transcribe audio. ' + err.message);
+            setError(parseError(err));
         } finally {
             setIsLoading(false);
         }
@@ -121,7 +122,7 @@ const AudioTranscription: React.FC<AudioTranscriptionProps> = ({ documents, setD
                 <div className="bg-slate-800/50 rounded-lg p-4 h-[60vh] overflow-y-auto flex flex-col">
                     <div className="flex-grow">
                         {isLoading && <div className="flex items-center justify-center h-full"><Spinner /></div>}
-                        {error && <p className="text-red-400">{error}</p>}
+                        {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
                         {result && <p className="text-slate-200 whitespace-pre-wrap">{result}</p>}
                         {!isLoading && !result && !error && <div className="flex items-center justify-center h-full text-slate-500">Transcription will appear here.</div>}
                     </div>

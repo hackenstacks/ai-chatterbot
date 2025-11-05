@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { GeminiService } from '../services/geminiService';
 import FeatureLayout from './common/FeatureLayout';
@@ -7,6 +6,8 @@ import MarkdownRenderer from '../components/MarkdownRenderer';
 import { dbService, StoredFile } from '../services/dbService';
 import { SaveIcon } from '../components/Icons';
 import { encode } from '../utils/helpers';
+import ErrorDisplay from '../components/ErrorDisplay';
+import { parseError, FormattedError } from '../utils/errorUtils';
 
 interface ComplexReasoningProps {
     documents: StoredFile[];
@@ -17,22 +18,22 @@ const ComplexReasoning: React.FC<ComplexReasoningProps> = ({ documents, setDocum
     const [prompt, setPrompt] = useState<string>('Explain the concept of quantum entanglement to a high school student, including an analogy to help with understanding.');
     const [result, setResult] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string>('');
+    const [error, setError] = useState<FormattedError | null>(null);
 
     const handleQuery = async () => {
         if (!prompt) {
-            setError('Please enter a prompt.');
+            setError(parseError(new Error('Please enter a prompt.')));
             return;
         }
         setIsLoading(true);
-        setError('');
+        setError(null);
         setResult('');
         try {
             const response = await GeminiService.complexReasoning(prompt);
             setResult(response.text);
         } catch (err: any) {
             console.error(err);
-            setError('An error occurred. ' + err.message);
+            setError(parseError(err));
         } finally {
             setIsLoading(false);
         }
@@ -92,7 +93,7 @@ const ComplexReasoning: React.FC<ComplexReasoningProps> = ({ documents, setDocum
 
                 <div className="bg-slate-800/50 rounded-lg p-4 min-h-[50vh] mt-6">
                     {isLoading && <div className="flex items-center justify-center h-full"><Spinner text="Thinking... this may take some time for complex queries." /></div>}
-                    {error && <p className="text-red-400">{error}</p>}
+                    {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
                     {result && (
                          <div>
                             <div className="flex justify-between items-start">

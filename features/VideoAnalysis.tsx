@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { GeminiService } from '../services/geminiService';
 import { fileToBase64, formatBytes, encode } from '../utils/helpers';
@@ -7,6 +6,8 @@ import Spinner from '../components/Spinner';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { dbService, StoredFile } from '../services/dbService';
 import { SaveIcon } from '../components/Icons';
+import ErrorDisplay from '../components/ErrorDisplay';
+import { parseError, FormattedError } from '../utils/errorUtils';
 
 interface VideoAnalysisProps {
     documents: StoredFile[];
@@ -18,7 +19,7 @@ const VideoAnalysis: React.FC<VideoAnalysisProps> = ({ documents, setDocuments }
     const [prompt, setPrompt] = useState<string>('Summarize this video.');
     const [result, setResult] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string>('');
+    const [error, setError] = useState<FormattedError | null>(null);
     const videoRef = React.useRef<HTMLVideoElement>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -26,7 +27,7 @@ const VideoAnalysis: React.FC<VideoAnalysisProps> = ({ documents, setDocuments }
         if (selectedFile) {
             setFile(selectedFile);
             setResult('');
-            setError('');
+            setError(null);
              if (videoRef.current) {
                 videoRef.current.src = URL.createObjectURL(selectedFile);
             }
@@ -35,15 +36,15 @@ const VideoAnalysis: React.FC<VideoAnalysisProps> = ({ documents, setDocuments }
 
     const handleAnalyze = async () => {
         if (!file || !prompt) {
-            setError('Please select a video and enter a prompt.');
+            setError(parseError(new Error('Please select a video and enter a prompt.')));
             return;
         }
         if (file.size > 10 * 1024 * 1024) { // 10MB limit for client-side demo
-            setError('File is too large. Please upload a video under 10MB for this demo.');
+            setError(parseError(new Error('File is too large. Please upload a video under 10MB for this demo.')));
             return;
         }
         setIsLoading(true);
-        setError('');
+        setError(null);
         setResult('');
         try {
             const videoBase64 = await fileToBase64(file);
@@ -51,7 +52,7 @@ const VideoAnalysis: React.FC<VideoAnalysisProps> = ({ documents, setDocuments }
             setResult(response.text);
         } catch (err: any) {
             console.error(err);
-            setError('Failed to analyze video. ' + err.message);
+            setError(parseError(err));
         } finally {
             setIsLoading(false);
         }
@@ -133,7 +134,7 @@ const VideoAnalysis: React.FC<VideoAnalysisProps> = ({ documents, setDocuments }
                 <div className="bg-slate-800/50 rounded-lg p-4 h-[60vh] overflow-y-auto flex flex-col">
                     <div className="flex-grow">
                         {isLoading && <div className="flex items-center justify-center h-full"><Spinner /></div>}
-                        {error && <p className="text-red-400">{error}</p>}
+                        {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
                         {result && <MarkdownRenderer content={result} />}
                         {!isLoading && !result && !error && <div className="flex items-center justify-center h-full text-slate-500">Video analysis results will appear here.</div>}
                     </div>

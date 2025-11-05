@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { Chat, FunctionCall } from '@google/genai';
+import type { Chat, FunctionCall, Part } from '@google/genai';
 import { GeminiService } from '../services/geminiService';
 import type { ChatMessage, Persona } from '../types';
 import FeatureLayout from './common/FeatureLayout';
@@ -10,7 +10,8 @@ import Tooltip from '../components/Tooltip';
 import { dbService, StoredFile } from '../services/dbService';
 import PersonaConfigModal from './common/PersonaConfigModal';
 import FileAccessModal from './common/FileAccessModal';
-import { encode } from '../utils/helpers';
+import { encode, fileToBase64, base64ToBlob } from '../utils/helpers';
+import { parseError } from '../utils/errorUtils';
 
 
 const HISTORY_SUMMARY_THRESHOLD = 10;
@@ -33,6 +34,12 @@ const createDefaultPersona = (): Persona => ({
 interface ChatBotProps {
     documents: StoredFile[];
     setDocuments: React.Dispatch<React.SetStateAction<StoredFile[]>>;
+}
+
+interface SessionData {
+    messages: ChatMessage[];
+    persona: Persona;
+    accessibleFiles: string[];
 }
 
 const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
@@ -66,9 +73,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
     
     const initializeChatState = useCallback(async () => {
         try {
-            const [history, savedPersonas] = await Promise.all([
+            const [history, savedPersonas, savedFileAccess] = await Promise.all([
                 dbService.getChatHistory(),
-                dbService.getPersonas()
+                dbService.getPersonas(),
+                dbService.getSetting<string[]>('accessibleFiles')
             ]);
             
             let currentPersona = savedPersonas.find(p => p.isActive);
@@ -81,6 +89,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
 
             setActivePersona(currentPersona);
             setMessages(history);
+            setAccessibleFiles(savedFileAccess || []);
             
         } catch (error) {
             console.error("Failed to load chat history or persona:", error);
@@ -99,13 +108,17 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
             const newChat = GeminiService.createChatWithHistory(chatHistory, systemInstruction);
             setChat(newChat);
         }
-    }, [activePersona, accessibleFiles]);
+    }, [activePersona, accessibleFiles, messages, constructSystemPrompt]);
     
     useEffect(() => {
         if (messages.length > 0) {
             dbService.saveChatHistory(messages).catch(console.error);
         }
     }, [messages]);
+
+    useEffect(() => {
+        dbService.saveSetting('accessibleFiles', accessibleFiles).catch(console.error);
+    }, [accessibleFiles]);
 
     useEffect(() => {
         const lastMessage = messages[messages.length - 1];
@@ -167,6 +180,26 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
         setInput('');
         setIsLoading(true);
 
+        // Check for file context
+        const messageParts: Part[] = [{ text: currentInput }];
+        const filesToAttach = documents.filter(doc => accessibleFiles.includes(doc.name) && currentInput.toLowerCase().includes(doc.name.toLowerCase()));
+        
+        for (const file of filesToAttach) {
+            if (file.type.startsWith('image/')) {
+                messageParts.push({
+                    inlineData: {
+                        mimeType: file.type,
+                        data: file.data
+                    }
+                });
+            } else if (file.type.startsWith('text/')) {
+                try {
+                    const textContent = atob(file.data); // data is base64
+                    messageParts.push({ text: `\n\n[Content of ${file.name}]:\n${textContent}` });
+                } catch (e) { console.error(`Failed to decode text file ${file.name}`, e); }
+            }
+        }
+
         if (currentInput.toLowerCase().startsWith('/imagine ')) {
             try {
                 const prompt = currentInput.substring(8).trim();
@@ -185,7 +218,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
         }
 
         try {
-            const result = await chat.sendMessageStream({ message: currentInput });
+            const result = await chat.sendMessageStream({ parts: messageParts });
             let text = '';
             let accumulatedFunctionCalls: FunctionCall[] = [];
             setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
@@ -208,13 +241,15 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
 
         } catch (error) {
             console.error(error);
+            const formattedError = parseError(error);
+            const errorMessage = `**Error:** ${formattedError.message} (Code: ${formattedError.code || 'N/A'})`;
              setMessages(prev => {
                 const newMessages = [...prev];
                 const lastMessage = newMessages[newMessages.length - 1];
                 if (lastMessage?.role === 'model' && lastMessage.parts[0].text === '') {
-                     lastMessage.parts[0].text = 'Sorry, something went wrong. Please try again.';
+                     lastMessage.parts[0].text = errorMessage;
                 } else {
-                    newMessages.push({ role: 'model', parts: [{ text: 'Sorry, something went wrong. Please try again.' }] });
+                    newMessages.push({ role: 'model', parts: [{ text: errorMessage }] });
                 }
                 return newMessages;
             });
@@ -239,7 +274,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
             const newChatHistory = [
                 { role: 'user' as const, parts: [{ text: `This is a summary of our conversation so far:\n\n${summary}\n\nPlease continue the conversation from here.` }] },
                 { role: 'model' as const, parts: [{ text: "Understood. I have reviewed the summary and I'm ready to continue." }] },
-                ...recentMessagesForContext.map(m => ({ role: m.role, parts: m.parts })),
+                ...recentMessagesForContext.map(m => ({ role: m.role, parts: m.parts.map(p => ({ text: p.text })) })),
             ];
             
             const systemInstruction = constructSystemPrompt(activePersona, accessibleFiles);
@@ -340,6 +375,44 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
         }
     };
 
+    const handleSaveSession = () => {
+        const sessionData: SessionData = {
+            messages,
+            persona: activePersona,
+            accessibleFiles,
+        };
+        const blob = new window.Blob([JSON.stringify(sessionData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gemini-chat-session-${new Date().toISOString()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleLoadSession = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const sessionData: SessionData = JSON.parse(event.target?.result as string);
+                setMessages(sessionData.messages || []);
+                setActivePersona(sessionData.persona || createDefaultPersona());
+                setAccessibleFiles(sessionData.accessibleFiles || []);
+                // Persona will be saved as active on the next interaction
+            } catch (error) {
+                console.error("Failed to load session:", error);
+                alert("Invalid session file.");
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
     useEffect(() => {
         if (messages.length >= HISTORY_SUMMARY_THRESHOLD && !isSummarizing && !isLoading) {
             const lastMessageText = messages[messages.length-1]?.parts[0]?.text || '';
@@ -392,6 +465,15 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
                     </div>
                 )}
                 <div className="mt-2 flex items-center space-x-2">
+                    <Tooltip text="Save Chat Session">
+                        <button onClick={handleSaveSession} disabled={isLoading || isSummarizing || messages.length === 0} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><SaveIcon /></button>
+                    </Tooltip>
+                    <Tooltip text="Load Chat Session">
+                        <label htmlFor="load-chat-session" className={`bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors cursor-pointer ${isLoading || isSummarizing ? 'opacity-50' : ''}`}>
+                            <input id="load-chat-session" type="file" className="hidden" accept=".json" onChange={handleLoadSession} disabled={isLoading || isSummarizing}/>
+                            <SparklesIcon /> 
+                        </label>
+                    </Tooltip>
                     <Tooltip text="Clear chat history. This cannot be undone.">
                         <button onClick={handleClearHistory} disabled={isLoading || isSummarizing || messages.length === 0} className="bg-slate-700 hover:bg-red-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><TrashIcon /></button>
                     </Tooltip>
@@ -401,9 +483,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
                      <Tooltip text="Grant AI access to files from your library for this chat session.">
                         <button onClick={() => setIsFileModalOpen(true)} disabled={isLoading || isSummarizing} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><PaperclipIcon /></button>
                     </Tooltip>
-                    <Tooltip text="Generate an image with '/imagine [prompt]'">
-                        <button onClick={() => setInput('/imagine ')} disabled={isLoading || isSummarizing} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><SparklesIcon /></button>
-                    </Tooltip>
+                    
                     <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder={isSummarizing ? "Summarizing..." : "Type your message..."} rows={1} className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" disabled={isSummarizing} />
                     <Tooltip text="Use Voice Input">
                         <button onClick={handleToggleListening} disabled={isLoading || isSummarizing} className={`p-3 rounded-full transition-colors disabled:opacity-50 ${isListening ? 'bg-red-600 animate-pulse' : 'bg-slate-700 hover:bg-blue-600/50'}`}><MicIcon /></button>

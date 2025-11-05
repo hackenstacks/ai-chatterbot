@@ -4,15 +4,19 @@ import { LiveServerMessage, LiveSession, FunctionDeclaration, Type, FunctionCall
 import { GeminiService } from '../services/geminiService';
 import FeatureLayout from './common/FeatureLayout';
 import { decode, decodeAudioData, createPcmBlob, fileToBase64, formatBytes, base64ToBlob, readFileContent, encode } from '../utils/helpers';
-import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon } from '../components/Icons';
+import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon, PaperclipIcon, SendIcon } from '../components/Icons';
 import useGeolocation from '../hooks/useGeolocation';
 import type { GroundingSource, Persona } from '../types';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import Tooltip from '../components/Tooltip';
 import { dbService, StoredFile } from '../services/dbService';
+import { parseError, FormattedError } from '../utils/errorUtils';
+import ErrorDisplay from '../components/ErrorDisplay';
+import { LIVE_VOICES } from '../constants';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error' | 'closed' | 'reconnecting';
 const MAX_RECONNECT_ATTEMPTS = 3;
+const SUMMARY_THRESHOLD = 5; // Summarize after 5 turns (user + model)
 
 interface SessionData {
     transcripts: { user: string, model: string }[];
@@ -143,11 +147,14 @@ const functionDeclarations: FunctionDeclaration[] = [
 
 const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocuments }) => {
     const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
+    const [isPaused, setIsPaused] = useState(false);
     const [reconnectAttempts, setReconnectAttempts] = useState(0);
     const [transcripts, setTranscripts] = useState<{ user: string, model: string }[]>([]);
     const [currentInterim, setCurrentInterim] = useState<{ user: string, model: string }>({ user: '', model: '' });
-    const [file, setFile] = useState<File | null>(null);
+    const [file, setFile] = useState<File | null>(null); // For the main media player
     const [fileUrl, setFileUrl] = useState<string | null>(null);
+    const [textInput, setTextInput] = useState('');
+    const [imageInput, setImageInput] = useState<File | null>(null);
     const [analysisResult, setAnalysisResult] = useState<string | null>(null);
     const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
     const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
@@ -157,7 +164,9 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     const [outputGain, setOutputGain] = useState(1.0);
     const [personas, setPersonas] = useState<Persona[]>([]);
     const [activePersonaId, setActivePersonaId] = useState<string>('default');
-
+    const [isSummarizing, setIsSummarizing] = useState(false);
+    const [error, setError] = useState<FormattedError | null>(null);
+    
     const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -167,23 +176,32 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     const location = useGeolocation();
     const micGainNodeRef = useRef<GainNode | null>(null);
     const outputGainNodeRef = useRef<GainNode | null>(null);
+    const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const isPausedRef = useRef(isPaused);
+    const conversationSummaryRef = useRef<string | null>(null);
 
     const nextStartTimeRef = useRef(0);
     const sourcesRef = useRef(new Set<AudioBufferSourceNode>());
+
+    useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
     
+    useEffect(() => {
+        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [transcripts, currentInterim]);
+
     useEffect(() => {
         dbService.getPersonas().then(setPersonas).catch(console.error);
     }, []);
 
     useEffect(() => {
         if (micGainNodeRef.current) {
-            micGainNodeRef.current.gain.value = micGain;
+            micGainNodeRef.current.gain.setValueAtTime(micGain, audioContextRef.current?.currentTime || 0);
         }
     }, [micGain]);
 
     useEffect(() => {
         if (outputGainNodeRef.current) {
-            outputGainNodeRef.current.gain.value = outputGain;
+            outputGainNodeRef.current.gain.setValueAtTime(outputGain, outputAudioContextRef.current?.currentTime || 0);
         }
     }, [outputGain]);
 
@@ -192,6 +210,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         setSources([]);
         setGeneratedImageUrl(null);
         setYoutubeVideoId(null);
+        setError(null);
     };
 
     const handleStopConversation = useCallback(() => {
@@ -220,6 +239,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         sourcesRef.current.clear();
         
         setConnectionState('idle');
+        setIsPaused(false);
     }, []);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,6 +254,39 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         }
     };
     
+    const handleImageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = e.target.files?.[0];
+        if (selectedFile && selectedFile.type.startsWith('image/')) {
+            setImageInput(selectedFile);
+        }
+    };
+    
+    const handleSendMessage = async () => {
+        const session = await sessionPromiseRef.current;
+        if (!session || (!textInput.trim() && !imageInput)) return;
+
+        if (imageInput) {
+            const base64Data = await fileToBase64(imageInput);
+            session.sendRealtimeInput({
+                media: { data: base64Data, mimeType: imageInput.type }
+            });
+            // Visually add to transcript
+            setTranscripts(prev => [...prev, { user: `[Sent image: ${imageInput.name}] ${textInput}`, model:'' }]);
+        }
+
+        if (textInput.trim()) {
+            // TTS hack: speak the text so the user's mic picks it up
+            const utterance = new SpeechSynthesisUtterance(textInput);
+            window.speechSynthesis.speak(utterance);
+             if (!imageInput) { // if image is sent, text is attached to it
+                setTranscripts(prev => [...prev, { user: textInput, model: '' }]);
+            }
+        }
+        
+        setTextInput('');
+        setImageInput(null);
+    };
+
     const handleSaveSession = async () => {
         if (transcripts.length === 0 && !analysisResult && !file && !generatedImageUrl) {
             alert("Nothing to save.");
@@ -518,8 +571,8 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                 }
             } catch (e: any) {
                 console.error(`Error executing tool ${name}:`, e);
+                setError(parseError(e));
                 result = { status: 'error', message: e.message };
-                setAnalysisResult(`Error: ${e.message}`);
             }
             
             session.sendToolResponse({
@@ -529,13 +582,17 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         setIsProcessingTool(false);
     };
 
-    const handleStartConversation = useCallback(async (isRetry = false) => {
+    const handleStartConversation = useCallback(async (isRetry = false, customSystemInstruction?: string) => {
         if (!isRetry) {
             setReconnectAttempts(0);
             setTranscripts([]);
             setCurrentInterim({ user: '', model: '' });
+            if (!customSystemInstruction) { // Don't clear summary if we are restarting with it
+                 conversationSummaryRef.current = null;
+            }
         }
         setConnectionState('connecting');
+        setError(null);
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -553,7 +610,11 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
             outputGainNode.connect(outputAudioContext.destination);
 
             const activePersona = personas.find(p => p.id === activePersonaId);
-            const voiceName = activePersona?.voice || await dbService.getVoicePreference() || 'Zephyr';
+            let voiceName = activePersona?.voice || await dbService.getVoicePreference() || 'Zephyr';
+            if (!LIVE_VOICES.includes(voiceName)) {
+                console.warn(`Stored voice "${voiceName}" is not valid. Defaulting to Zephyr.`);
+                voiceName = 'Zephyr';
+            }
             
             let systemInstruction = '';
             if (activePersona) {
@@ -567,6 +628,8 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                 ].filter(Boolean).join('\n');
             }
             
+            const finalSystemInstruction = customSystemInstruction || (conversationSummaryRef.current ? `${conversationSummaryRef.current}\n\n${systemInstruction}` : systemInstruction);
+
             const sessionPromise = GeminiService.connectLive({
                 onopen: () => {
                     setConnectionState('connected');
@@ -580,6 +643,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                     micGainNodeRef.current = micGainNode;
 
                     scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+                        if (isPausedRef.current) return;
                         const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
                         const pcmBlob = createPcmBlob(inputData);
                         sessionPromiseRef.current?.then((session) => {
@@ -629,6 +693,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                 },
                 onerror: (e: ErrorEvent) => { 
                     console.error('Live session error:', e); 
+                    setError(parseError(e));
                     setConnectionState('error'); 
                     handleStopConversation();
                 },
@@ -642,15 +707,56 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                         setConnectionState('closed');
                     }
                 },
-            }, voiceName, [{ functionDeclarations }], systemInstruction);
+            }, voiceName, [{ functionDeclarations }], finalSystemInstruction);
 
             sessionPromiseRef.current = sessionPromise;
 
         } catch (error) {
             console.error("Failed to start conversation:", error);
+            setError(parseError(error));
             setConnectionState('error');
         }
     }, [reconnectAttempts, handleStopConversation, documents, micGain, outputGain, personas, activePersonaId]);
+
+    const summarizeAndRestart = useCallback(async () => {
+        if (isSummarizing) return;
+        
+        setIsSummarizing(true);
+        const currentTranscripts = transcripts;
+        
+        handleStopConversation();
+
+        try {
+            const conversationText = currentTranscripts.map(t => `User: ${t.user}\nModel: ${t.model}`).join('\n\n');
+            const summary = await GeminiService.summarizeConversation([{ role: 'user', parts: [{ text: `Summarize this conversation: ${conversationText}` }] }]);
+            conversationSummaryRef.current = `This is a summary of the conversation so far, continue from here:\n${summary}`;
+            
+            const summaryNotification = { user: '', model: `[System: I've summarized our conversation to maintain context.]` };
+            setTranscripts(prev => [...prev, summaryNotification]);
+
+            // Wait for UI to update before restarting
+            setTimeout(() => {
+                handleStartConversation(false);
+                setIsSummarizing(false);
+            }, 500);
+
+        } catch (error) {
+            console.error("Failed to summarize and restart:", error);
+            setError(parseError(error));
+            // If summarization fails, just restart without it
+            handleStartConversation(false);
+            setIsSummarizing(false);
+        }
+    }, [isSummarizing, transcripts, handleStopConversation, handleStartConversation]);
+
+    useEffect(() => {
+        if (transcripts.length > 0 && transcripts.length % SUMMARY_THRESHOLD === 0 && connectionState === 'connected' && !isSummarizing) {
+            // Check if the last message is not the summary notification
+            if (!transcripts[transcripts.length - 1].model.includes('System:')) {
+                summarizeAndRestart();
+            }
+        }
+    }, [transcripts, connectionState, summarizeAndRestart, isSummarizing]);
     
     useEffect(() => {
         return () => { handleStopConversation(); };
@@ -693,7 +799,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         return <p className="text-slate-500">Results from tools will appear here.</p>;
     }
 
-    const isBusy = connectionState === 'connecting' || connectionState === 'reconnecting';
+    const isBusy = connectionState === 'connecting' || connectionState === 'reconnecting' || isSummarizing;
 
     return (
         <FeatureLayout title="Live Conversation" description="Speak with a multimodal Gemini assistant. Ask it to search, analyze files, and more.">
@@ -709,36 +815,37 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                     </button>
                                 </Tooltip>
                             ) : (
+                                <div className="flex items-center space-x-2">
                                 <Tooltip text="Stop the current voice conversation and disconnect from the AI.">
                                     <div className="relative">
                                         <button onClick={handleStopConversation} className="relative z-10 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
                                             <MicIcon />
-                                            <span>Stop Conversation</span>
+                                            <span>Stop</span>
                                         </button>
                                         <div className="absolute top-0 left-0 w-full h-full rounded-lg bg-green-500/50 animate-ping"></div>
                                     </div>
                                 </Tooltip>
+                                 <Tooltip text={isPaused ? "Resume listening" : "Pause listening"}>
+                                        <button onClick={() => setIsPaused(!isPaused)} className={`font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors ${isPaused ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-slate-600 hover:bg-slate-700'} text-white`}>
+                                            <span>{isPaused ? "Resume" : "Pause"}</span>
+                                        </button>
+                                 </Tooltip>
+                                </div>
                             )}
-                             <input type="file" id="file-upload" className="hidden" onChange={handleFileChange} disabled={isBusy} />
-                             <Tooltip text="Upload an image, video, audio, or document file. You can then ask the AI to analyze it during your conversation.">
-                                 <label htmlFor="file-upload" className={`bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors text-center ${isBusy ? 'cursor-not-allowed bg-slate-600' : 'cursor-pointer hover:bg-slate-600'}`}>
-                                     {file ? "Change File" : "Upload File"}
-                                 </label>
-                             </Tooltip>
-                             <Tooltip text="Download a JSON file containing the full conversation transcript and any uploaded file data.">
+                             <Tooltip text="Save the current session transcript and media to a downloadable file.">
                                 <button onClick={handleSaveSession} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Save Session</button>
                              </Tooltip>
-                             <input type="file" id="load-session" className="hidden" accept=".json" onChange={handleLoadSession} disabled={isBusy} />
-                             <Tooltip text="Load a conversation from a previously saved JSON session file.">
-                                <label htmlFor="load-session" className={`bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-center ${isBusy ? 'cursor-not-allowed bg-slate-600' : 'cursor-pointer hover:bg-blue-700'}`}>Load Session</label>
-                             </Tooltip>
                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-800/50 p-3 rounded-lg">
-                            <div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-800/50 p-3 rounded-lg">
+                             <div>
                                 <select id="persona-select" value={activePersonaId} onChange={e => setActivePersonaId(e.target.value)} disabled={connectionState === 'connected'} className="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50">
                                     <option value="default">Default Assistant</option>
                                     {personas.map(p => <option key={p.id} value={p.id}>{p.role}</option>)}
                                 </select>
+                            </div>
+                            <div className="flex items-center space-x-2 text-slate-300">
+                                <Tooltip text="Microphone Input Gain"><MicIcon /></Tooltip>
+                                <input type="range" id="mic-gain" min="0" max="2" step="0.1" value={micGain} onChange={e => setMicGain(parseFloat(e.target.value))} className="w-full" />
                             </div>
                              <div className="flex items-center space-x-2 text-slate-300">
                                 <Tooltip text="AI Output Volume"><Volume2Icon /></Tooltip>
@@ -747,6 +854,21 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                         </div>
                     </div>
                     <div className="flex-grow bg-slate-800/50 rounded-lg p-4 flex items-center justify-center min-h-0">{renderMedia()}</div>
+                    <div className="flex-shrink-0 space-y-2">
+                        {imageInput && <p className="text-xs text-slate-400">Attached: {imageInput.name}</p>}
+                        <div className="flex items-center space-x-2">
+                            <input type="file" id="image-message-upload" className="hidden" accept="image/*" onChange={handleImageInputChange} disabled={connectionState !== 'connected'} />
+                            <Tooltip text="Attach an image to your next message.">
+                                <label htmlFor="image-message-upload" className={`p-3 rounded-full transition-colors ${connectionState !== 'connected' ? 'bg-slate-700 opacity-50' : 'bg-slate-700 hover:bg-blue-600/50 cursor-pointer'}`}>
+                                    <PaperclipIcon />
+                                </label>
+                            </Tooltip>
+                            <textarea value={textInput} onChange={e => setTextInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} placeholder="Type a message... AI will 'hear' it via TTS" rows={1} className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" disabled={connectionState !== 'connected'} />
+                             <Tooltip text="Send text and/or attached image. Text is sent via TTS-to-mic loop." position="top">
+                                <button onClick={handleSendMessage} disabled={connectionState !== 'connected' || (!textInput.trim() && !imageInput)} className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white p-3 rounded-full transition-colors"><SendIcon /></button>
+                            </Tooltip>
+                        </div>
+                    </div>
                 </div>
                 <div className="flex flex-col space-y-4 h-full overflow-hidden">
                     <div className="flex-grow bg-slate-800/50 rounded-lg p-4 overflow-y-auto min-h-0">
@@ -764,34 +886,43 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                             </div>
                         )}
                     </div>
-                    <div className="flex-grow bg-slate-800/50 rounded-lg p-4 overflow-y-auto min-h-0">
-                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-700">
+                    <div className="flex-grow bg-slate-800/50 rounded-lg p-4 overflow-y-auto min-h-0 flex flex-col">
+                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-700 flex-shrink-0">
                              <h3 className="text-lg font-semibold text-slate-300">Conversation Transcript</h3>
                              {transcripts.length > 0 && (
                                 <button onClick={handleSaveTranscript} className="text-slate-400 hover:text-white p-1 rounded-full"><SaveIcon /></button>
                              )}
                         </div>
-                        {transcripts.map((t, i) => (
-                            <div key={i} className="mb-3">
-                                <p className="text-blue-300 font-semibold">You:</p><p className="text-slate-300 ml-2">{t.user}</p>
-                                <p className="text-green-300 font-semibold mt-1">Gemini:</p><p className="text-slate-300 ml-2">{t.model}</p>
-                            </div>
-                        ))}
-                        {(currentInterim.user || currentInterim.model) && (
-                            <div>
-                               {currentInterim.user && <p className="text-blue-300/70">You: <span className="text-slate-400 font-normal">{currentInterim.user}</span></p>}
-                               {currentInterim.model && <p className="text-green-300/70 mt-1">Gemini: <span className="text-slate-400 font-normal">{currentInterim.model}</span></p>}
-                            </div>
-                        )}
-                        {connectionState === 'idle' && !transcripts.length && <div className="text-slate-500">Press "Start Conversation" to begin.</div>}
+                        <div className="overflow-y-auto flex-grow">
+                            {transcripts.map((t, i) => (
+                                <div key={i} className="mb-3">
+                                    <p className="text-blue-300 font-semibold">You:</p><p className="text-slate-300 ml-2">{t.user}</p>
+                                    <p className="text-green-300 font-semibold mt-1">Gemini:</p><p className="text-slate-300 ml-2">{t.model}</p>
+                                </div>
+                            ))}
+                            {(currentInterim.user || currentInterim.model) && (
+                                <div>
+                                {currentInterim.user && <p className="text-blue-300/70">You: <span className="text-slate-400 font-normal">{currentInterim.user}</span></p>}
+                                {currentInterim.model && <p className="text-green-300/70 mt-1">Gemini: <span className="text-slate-400 font-normal">{currentInterim.model}</span></p>}
+                                </div>
+                            )}
+                            {connectionState === 'idle' && !transcripts.length && <div className="text-slate-500">Press "Start Conversation" to begin.</div>}
+                            <div ref={transcriptEndRef} />
+                        </div>
                     </div>
                 </div>
             </div>
-             <div className="h-8 text-center mt-2">
-                {connectionState === 'error' && <p className="text-red-400">An error occurred. Please try starting the conversation again.</p>}
-                {connectionState === 'closed' && reconnectAttempts >= MAX_RECONNECT_ATTEMPTS && <p className="text-red-400">Could not reconnect. Please check your connection and try again.</p>}
-                {connectionState === 'closed' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && <p className="text-yellow-400">Connection closed.</p>}
-                {connectionState === 'reconnecting' && <p className="text-yellow-400">Connection lost. Reconnecting... (Attempt {reconnectAttempts})</p>}
+             <div className="h-auto min-h-[4rem] text-center mt-2 px-4">
+                 {error ? (
+                    <ErrorDisplay error={error} onDismiss={() => setError(null)} />
+                 ) : (
+                    <>
+                        {isSummarizing && <p className="text-yellow-400">Summarizing conversation to maintain context...</p>}
+                        {connectionState === 'closed' && reconnectAttempts >= MAX_RECONNECT_ATTEMPTS && <p className="text-red-400">Could not reconnect. Please check your connection and try again.</p>}
+                        {connectionState === 'closed' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && <p className="text-yellow-400">Connection closed.</p>}
+                        {connectionState === 'reconnecting' && <p className="text-yellow-400">Connection lost. Reconnecting... (Attempt {reconnectAttempts})</p>}
+                    </>
+                 )}
             </div>
         </FeatureLayout>
     );

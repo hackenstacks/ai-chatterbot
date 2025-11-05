@@ -240,6 +240,41 @@ export const dbService = {
       });
   },
   
+  async saveSetting<T>(key: string, value: T): Promise<void> {
+      const encryptedPayload = await cryptoService.encrypt(value);
+      const db = await openDB();
+      const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
+      const store = transaction.objectStore(SETTINGS_STORE);
+      store.put({ id: key, encryptedPayload });
+      return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
+  async getSetting<T>(key: string): Promise<T | null> {
+      const db = await openDB();
+      const transaction = db.transaction(SETTINGS_STORE, 'readonly');
+      const store = transaction.objectStore(SETTINGS_STORE);
+      const request = store.get(key);
+      return new Promise((resolve, reject) => {
+          request.onsuccess = async () => {
+              if (request.result && request.result.encryptedPayload) {
+                  try {
+                      const decrypted = await cryptoService.decrypt<T>(request.result.encryptedPayload);
+                      resolve(decrypted);
+                  } catch (error) {
+                      console.error(`Could not decrypt setting "${key}":`, error);
+                      resolve(null);
+                  }
+              } else {
+                  resolve(null);
+              }
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
   async clearAllData(): Promise<void> {
       const db = await openDB();
       const transaction = db.transaction([FILE_STORE, CHAT_STORE, SETTINGS_STORE], 'readwrite');
@@ -255,17 +290,18 @@ export const dbService = {
   },
 
   async getAllDataForBackup(): Promise<object> {
-      const [files, chatHistory, personas, voicePreference] = await Promise.all([
+      const [files, chatHistory, personas, voicePreference, accessibleFiles] = await Promise.all([
           this.getDocuments(),
           this.getChatHistory(),
           this.getPersonas(),
-          this.getVoicePreference()
+          this.getVoicePreference(),
+          this.getSetting('accessibleFiles'),
       ]);
-      return { files, chatHistory, personas, voicePreference };
+      return { files, chatHistory, personas, voicePreference, accessibleFiles };
   },
 
   async importAndOverwriteAllData(data: any): Promise<void> {
-      const { files, chatHistory, personas, voicePreference } = data;
+      const { files, chatHistory, personas, voicePreference, accessibleFiles } = data;
       
       await this.clearAllData();
 
@@ -274,5 +310,6 @@ export const dbService = {
       if (chatHistory && Array.isArray(chatHistory) && chatHistory.length > 0) await this.saveChatHistory(chatHistory);
       if (personas && Array.isArray(personas) && personas.length > 0) await this.savePersonas(personas);
       if (voicePreference) await this.saveVoicePreference(voicePreference);
+      if (accessibleFiles) await this.saveSetting('accessibleFiles', accessibleFiles);
   }
 };

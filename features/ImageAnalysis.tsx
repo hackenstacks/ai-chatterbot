@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { GeminiService } from '../services/geminiService';
 import { fileToBase64, formatBytes, encode } from '../utils/helpers';
@@ -7,6 +6,8 @@ import Spinner from '../components/Spinner';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { dbService, StoredFile } from '../services/dbService';
 import { SaveIcon } from '../components/Icons';
+import ErrorDisplay from '../components/ErrorDisplay';
+import { parseError, FormattedError } from '../utils/errorUtils';
 
 interface ImageAnalysisProps {
     documents: StoredFile[];
@@ -18,32 +19,32 @@ const ImageAnalysis: React.FC<ImageAnalysisProps> = ({ documents, setDocuments }
     const [prompt, setPrompt] = useState<string>('What is in this image?');
     const [result, setResult] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string>('');
+    const [error, setError] = useState<FormattedError | null>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = e.target.files?.[0];
         if (selectedFile) {
             setFile(selectedFile);
             setResult('');
-            setError('');
+            setError(null);
         }
     };
 
     const handleAnalyze = async () => {
         if (!file || !prompt) {
-            setError('Please select an image and enter a prompt.');
+            setError(parseError(new Error('Please select an image and enter a prompt.')));
             return;
         }
         setIsLoading(true);
-        setError('');
+        setError(null);
         setResult('');
         try {
             const imageBase64 = await fileToBase64(file);
             const response = await GeminiService.analyzeImage(prompt, imageBase64, file.type);
             setResult(response.text);
         } catch (err: any) {
-            console.error(err);
-            setError('Failed to analyze image. ' + err.message);
+            console.error("Image analysis failed:", err);
+            setError(parseError(err));
         } finally {
             setIsLoading(false);
         }
@@ -125,7 +126,7 @@ const ImageAnalysis: React.FC<ImageAnalysisProps> = ({ documents, setDocuments }
                 <div className="bg-slate-800/50 rounded-lg p-4 h-[60vh] overflow-y-auto flex flex-col">
                     <div className="flex-grow">
                         {isLoading && <div className="flex items-center justify-center h-full"><Spinner /></div>}
-                        {error && <p className="text-red-400">{error}</p>}
+                        {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
                         {result && <MarkdownRenderer content={result} />}
                         {!isLoading && !result && !error && <div className="flex items-center justify-center h-full text-slate-500">Analysis results will appear here.</div>}
                     </div>

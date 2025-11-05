@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { GeminiService } from '../services/geminiService';
 import useGeolocation from '../hooks/useGeolocation';
@@ -9,6 +8,8 @@ import { GlobeIcon, SaveIcon } from '../components/Icons';
 import type { GroundingSource } from '../types';
 import { dbService, StoredFile } from '../services/dbService';
 import { encode } from '../utils/helpers';
+import ErrorDisplay from '../components/ErrorDisplay';
+import { parseError, FormattedError } from '../utils/errorUtils';
 
 interface GroundingSearchProps {
     documents: StoredFile[];
@@ -21,16 +22,16 @@ const GroundingSearch: React.FC<GroundingSearchProps> = ({ documents, setDocumen
     const [result, setResult] = useState<string>('');
     const [sources, setSources] = useState<GroundingSource[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string>('');
+    const [error, setError] = useState<FormattedError | null>(null);
     const location = useGeolocation();
 
     const handleSearch = async () => {
         if (!prompt) {
-            setError('Please enter a prompt.');
+            setError(parseError(new Error('Please enter a prompt.')));
             return;
         }
         setIsLoading(true);
-        setError('');
+        setError(null);
         setResult('');
         setSources([]);
         
@@ -50,7 +51,7 @@ const GroundingSearch: React.FC<GroundingSearchProps> = ({ documents, setDocumen
             }
         } catch (err: any) {
             console.error(err);
-            setError('Failed to perform search. ' + err.message);
+            setError(parseError(err));
         } finally {
             setIsLoading(false);
         }
@@ -124,7 +125,7 @@ const GroundingSearch: React.FC<GroundingSearchProps> = ({ documents, setDocumen
 
                 <div className="bg-slate-800/50 rounded-lg p-4 min-h-[50vh] mt-6">
                     {isLoading && <div className="flex items-center justify-center h-full"><Spinner /></div>}
-                    {error && <p className="text-red-400">{error}</p>}
+                    {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
                     {result && (
                         <div>
                             <div className="flex justify-between items-start">

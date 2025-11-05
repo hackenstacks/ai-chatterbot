@@ -13,24 +13,13 @@ interface PersonaConfigModalProps {
 
 type LoadingField = keyof Persona | 'avatar' | 'autofill' | null;
 
+const geminiVoices = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
+
 const PersonaConfigModal: React.FC<PersonaConfigModalProps> = ({ isOpen, onClose, onSave, initialPersona }) => {
   const [persona, setPersona] = useState<Persona>(initialPersona);
   const [loadingField, setLoadingField] = useState<LoadingField>(null);
   const [avatarGenPrompt, setAvatarGenPrompt] = useState('A portrait of a character');
   const [autofillText, setAutofillText] = useState('');
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-
-  useEffect(() => {
-      const loadVoices = () => {
-          const availableVoices = window.speechSynthesis.getVoices();
-          setVoices(availableVoices);
-      };
-      loadVoices();
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-      return () => {
-          window.speechSynthesis.onvoiceschanged = null;
-      };
-  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -160,7 +149,7 @@ const PersonaConfigModal: React.FC<PersonaConfigModalProps> = ({ isOpen, onClose
             <div className="space-y-4">
                  {renderField('role', 'Name', 'e.g., Captain Eva Rostova', false)}
                  <div>
-                    <label htmlFor="voice" className="block text-sm font-medium text-slate-300 mb-1">Character Voice (for TTS)</label>
+                    <label htmlFor="voice" className="block text-sm font-medium text-slate-300 mb-1">Character Voice (Live & TTS)</label>
                     <select
                         id="voice"
                         name="voice"
@@ -168,10 +157,10 @@ const PersonaConfigModal: React.FC<PersonaConfigModalProps> = ({ isOpen, onClose
                         onChange={handleChange}
                         className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     >
-                        <option value="">Default Voice</option>
-                        {voices.map(voice => (
-                            <option key={voice.name} value={voice.name}>
-                                {voice.name} ({voice.lang})
+                        <option value="">Default (Zephyr)</option>
+                        {geminiVoices.map(voiceName => (
+                            <option key={voiceName} value={voiceName}>
+                                {voiceName}
                             </option>
                         ))}
                     </select>

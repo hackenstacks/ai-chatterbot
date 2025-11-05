@@ -6,8 +6,7 @@ import { DownloadIcon, UploadIcon, EditIcon, TrashIcon, ShareIcon } from '../com
 import { Persona } from '../types';
 import PersonaConfigModal from './common/PersonaConfigModal';
 import PasswordPromptModal from '../components/PasswordPromptModal';
-
-const voices = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
+import { LIVE_VOICES } from '../constants';
 
 // Helper to find JSON in a PNG ArrayBuffer (for TavernAI cards)
 const findJsonInPng = (arrayBuffer: ArrayBuffer, keyword: string): string | null => {
@@ -398,7 +397,7 @@ const Settings: React.FC = () => {
                     <h2 className="text-xl font-bold mb-3 text-white">Live Conversation Voice</h2>
                     <p className="text-slate-400 mb-6">Choose the voice Gemini will use during live conversations.</p>
                     <select value={selectedVoice} onChange={handleVoiceChange} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                        {voices.map(voice => <option key={voice} value={voice}>{voice}</option>)}
+                        {LIVE_VOICES.map(voice => <option key={voice} value={voice}>{voice}</option>)}
                     </select>
                 </div>
                 
