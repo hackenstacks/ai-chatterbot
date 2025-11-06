@@ -18,54 +18,63 @@ This AI Studio comes packed with a suite of powerful features:
 *   ⚙️ **Settings & Personas**: Customize your experience by creating and managing AI character personas. Securely backup and restore all your application data.
 *   🔐 **Secure & Private**: All your data (files, chat history, personas) is encrypted with a password you create and stored *only* in your browser's IndexedDB. Nothing is stored on a server.
 
-## 🛠️ How to Run Locally
+## 🛠️ How to Run
 
-This project is a standard web application built with Vite, React, and TypeScript. Follow these steps to run it on your local machine.
+This application is designed to be **run directly in a web browser without any build steps** (like Vite, Webpack, or `npm`).
 
-### Prerequisites
-*   [Node.js](https://nodejs.org/) (version 18 or later is recommended)
-*   [npm](https://www.npmjs.com/) (usually comes with Node.js)
+The error you are seeing (`Failed to resolve import "./components/Icons" from "App.tsx"`) is because you are trying to run this project with a tool like Vite, which it is not configured for.
 
-### 1. Set Up Your API Key
+Here is the correct way to run this application:
 
-The application needs your Google Gemini API key to function.
+1.  **Ensure all files are in the same directory**: Make sure `index.html`, `index.tsx`, `App.tsx`, and all other `.ts` and `.tsx` files are in the correct folder structure as provided.
+2.  **Use a simple web server**: You cannot open `index.html` directly from your file system (`file:///...`) due to security restrictions (CORS) related to ES modules. You need to serve the files from a local web server.
+    *   **If you have Python installed:**
+        ```bash
+        # In your project directory, run one of these commands
+        python -m http.server
+        # or for Python 2
+        python -m SimpleHTTPServer
+        ```
+        Then open `http://localhost:8000` in your browser.
+    *   **If you have Node.js installed:**
+        You can use a simple package like `serve`.
+        ```bash
+        # Install it globally if you haven't already
+        npm install -g serve
+        # In your project directory, run:
+        serve .
+        ```
+        Then open the URL it provides (usually `http://localhost:3000`).
+    *   **Using a VS Code Extension:**
+        Extensions like [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) are perfect for this. Simply install it, right-click on `index.html`, and choose "Open with Live Server".
 
-1.  Create a new file named `.env.local` in the root directory of the project.
-2.  Add your API key to this file like so:
+3.  **API Key**: This application is designed to run in an environment where the `process.env.API_KEY` is provided. When running locally with a simple server, the API key will be `undefined`, and API calls will fail. You would need to temporarily modify the code in `services/geminiService.ts` to hardcode your key for local testing:
+
+    ```typescript
+    // In services/geminiService.ts (FOR LOCAL TESTING ONLY)
+    const getAi = (): GoogleGenAI => {
+        const API_KEY = 'YOUR_GEMINI_API_KEY'; // <--- Add your key here
+        if (!API_KEY) {
+            console.error("API_KEY environment variable not set.");
+            throw new Error("API key is missing.");
+        }
+        // Always create a new instance to avoid issues with stale API keys.
+        return new GoogleGenAI({ apiKey: API_KEY });
+    };
     ```
-    API_KEY=YOUR_GEMINI_API_KEY_HERE
-    ```
-    The Vite development server is configured to automatically load this key and make it available to the application.
-
-### 2. Install Dependencies
-
-Open your terminal in the project's root directory and run the following command to install all the necessary packages:
-
-```bash
-npm install
-```
-
-### 3. Run the Development Server
-
-Once the installation is complete, start the local development server:
-
-```bash
-npm run dev
-```
-
-This command will start the Vite server, typically at `http://localhost:5173`. Open this URL in your web browser to see the application running.
+    **⚠️ IMPORTANT:** Remember to remove your hardcoded key before sharing or deploying the code!
 
 ## ⚙️ Configuration
 
-*   **API Key**: The API key is managed via the `.env.local` file as described above.
-*   **Data Storage**: All user data is stored locally in your browser's IndexedDB. It is encrypted using the password you provide on the first launch.
+*   **API Key**: As mentioned above, the API key is expected to be available as `process.env.API_KEY`. The provided code does not include any UI for setting this key.
+*   **Data Storage**: All user data is stored locally in the browser's IndexedDB. It is encrypted using the password you provide on first launch.
 
 ## 💻 Core Technologies
 
 *   **React 19**: For building the user interface.
 *   **TypeScript**: For type safety and better developer experience.
-*   **Vite**: A modern, fast build tool for web development.
 *   **@google/genai**: The official Google Gemini API client library.
-*   **Tailwind CSS**: For styling the application.
+*   **Tailwind CSS**: For styling the application, loaded via a CDN script.
 *   **IndexedDB**: For local, persistent, and secure data storage.
 *   **Web Crypto API**: For strong, end-to-end encryption of all user data.
+*   **ES Modules & Import Maps**: For dependency management directly in the browser without a bundler.

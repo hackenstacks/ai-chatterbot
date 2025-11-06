@@ -1,10 +1,11 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Chat, FunctionCall, Part } from '@google/genai';
 import { GeminiService } from '../services/geminiService';
 import type { ChatMessage, Persona } from '../types';
 import FeatureLayout from './common/FeatureLayout';
 import MarkdownRenderer from '../components/MarkdownRenderer';
-import { SendIcon, TrashIcon, SettingsIcon, PaperclipIcon, MicIcon, Volume2Icon, VolumeOffIcon, SparklesIcon, SaveIcon } from '../components/Icons';
+import { SendIcon, TrashIcon, SettingsIcon, PaperclipIcon, MicIcon, Volume2Icon, VolumeOffIcon, SparklesIcon, SaveIcon, UploadIcon } from '../components/Icons';
 import Spinner from '../components/Spinner';
 import Tooltip from '../components/Tooltip';
 import { dbService, StoredFile } from '../services/dbService';
@@ -138,6 +139,9 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
     const handleSavePersona = async (newPersona: Persona) => {
         const allPersonas = await dbService.getPersonas();
         const updatedPersonas = allPersonas.map(p => p.id === newPersona.id ? newPersona : p);
+        if (!updatedPersonas.some(p => p.id === newPersona.id)) {
+            updatedPersonas.push(newPersona);
+        }
         await dbService.savePersonas(updatedPersonas);
         setActivePersona(newPersona);
     };
@@ -218,7 +222,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
         }
 
         try {
-            const result = await chat.sendMessageStream({ parts: messageParts });
+            const result = await chat.sendMessageStream({ message: messageParts });
             let text = '';
             let accumulatedFunctionCalls: FunctionCall[] = [];
             setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
@@ -471,7 +475,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
                     <Tooltip text="Load Chat Session">
                         <label htmlFor="load-chat-session" className={`bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors cursor-pointer ${isLoading || isSummarizing ? 'opacity-50' : ''}`}>
                             <input id="load-chat-session" type="file" className="hidden" accept=".json" onChange={handleLoadSession} disabled={isLoading || isSummarizing}/>
-                            <SparklesIcon /> 
+                            <UploadIcon /> 
                         </label>
                     </Tooltip>
                     <Tooltip text="Clear chat history. This cannot be undone.">

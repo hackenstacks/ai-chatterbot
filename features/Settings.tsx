@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import FeatureLayout from './common/FeatureLayout';
 import { dbService } from '../services/dbService';
@@ -9,10 +10,12 @@ import PasswordPromptModal from '../components/PasswordPromptModal';
 import { LIVE_VOICES } from '../constants';
 
 // Helper to find JSON in a PNG ArrayBuffer (for TavernAI cards)
-const findJsonInPng = (arrayBuffer: ArrayBuffer, keyword: string): string | null => {
+const findJsonInPng = (arrayBuffer: ArrayBuffer): string | null => {
     const uint8 = new Uint8Array(arrayBuffer);
+    const keyword = 'chara'; // Common keyword for character data in PNGs
     const keywordBytes = new TextEncoder().encode(keyword);
     
+    // Find the keyword
     for (let i = 0; i < uint8.length - keywordBytes.length; i++) {
         let found = true;
         for (let j = 0; j < keywordBytes.length; j++) {
@@ -23,25 +26,33 @@ const findJsonInPng = (arrayBuffer: ArrayBuffer, keyword: string): string | null
         }
         
         if (found) {
-            const startOffset = i + keywordBytes.length;
-            let firstBrace = -1;
-            let braceCount = 0;
-            
-            for (let k = startOffset; k < uint8.length; k++) {
-                if (uint8[k] === 123 /* '{' */) {
-                    if (firstBrace === -1) firstBrace = k;
-                    braceCount++;
-                } else if (uint8[k] === 125 /* '}' */) {
-                    if (firstBrace !== -1) {
-                         braceCount--;
-                        if (braceCount === 0) {
-                            const jsonBytes = uint8.slice(firstBrace, k + 1);
-                            try {
-                                return new TextDecoder('utf-8').decode(jsonBytes);
-                            } catch (e) {
-                                firstBrace = -1; // Reset and continue searching
-                            }
-                        }
+            // After finding "chara", search forward for the JSON data, which is typically base64 encoded
+            // between two quote characters.
+            let startQuote = -1;
+            for (let k = i + keywordBytes.length; k < uint8.length; k++) {
+                if (uint8[k] === 34 /* '"' */) {
+                    startQuote = k;
+                    break;
+                }
+            }
+
+            if (startQuote !== -1) {
+                let endQuote = -1;
+                for (let l = startQuote + 1; l < uint8.length; l++) {
+                     if (uint8[l] === 34 /* '"' */) {
+                        endQuote = l;
+                        break;
+                    }
+                }
+
+                if (endQuote !== -1) {
+                    const base64Bytes = uint8.slice(startQuote + 1, endQuote);
+                    try {
+                        const base64String = new TextDecoder().decode(base64Bytes);
+                        return atob(base64String); // Decode base64 to get JSON string
+                    } catch (e) {
+                        console.error("Failed to decode base64 data from PNG", e);
+                        // Continue searching in case of false positive
                     }
                 }
             }
@@ -255,10 +266,23 @@ const Settings: React.FC = () => {
 
         try {
             let newPersona: Partial<Persona> | null = null;
-            if (file.name.endsWith('.json')) {
-                const content = await file.text();
-                const data = JSON.parse(content);
-                // Simple check for TavernAI format vs own format
+            let fileContent: string | null = null;
+
+            if (file.name.toLowerCase().endsWith('.json')) {
+                fileContent = await file.text();
+            } else if (file.name.toLowerCase().endsWith('.png')) {
+                const buffer = await file.arrayBuffer();
+                fileContent = findJsonInPng(buffer);
+                if (!fileContent) {
+                    throw new Error("Could not find character data in PNG file.");
+                }
+            } else {
+                throw new Error("Unsupported file type. Please use .json or .png character cards.");
+            }
+
+            if (fileContent) {
+                const data = JSON.parse(fileContent);
+                // Check for TavernAI format
                 if (data.name || data.char_name) {
                     newPersona = {
                         role: data.name || data.char_name || '',
@@ -284,26 +308,10 @@ const Settings: React.FC = () => {
                      return; // Early exit for bulk import
                 }
                 else {
-                    newPersona = data; // Assume it's our format
+                    newPersona = data; // Assume it's our format for a single persona
                 }
-            } else if (file.name.endsWith('.png')) {
-                const buffer = await file.arrayBuffer();
-                const jsonString = findJsonInPng(buffer, 'chara');
-                if (jsonString) {
-                    const data = JSON.parse(jsonString);
-                    newPersona = {
-                        role: data.name || '',
-                        characterDescription: data.first_mes || '',
-                        personalityTraits: data.personality || '',
-                        scenario: data.scenario || '',
-                        lore: data.description || '',
-                    };
-                } else {
-                    throw new Error("Could not find character data in PNG file.");
-                }
-            } else {
-                throw new Error("Unsupported file type. Please use .json or .png character cards.");
             }
+
 
             if (newPersona) {
                 const completePersona: Persona = {

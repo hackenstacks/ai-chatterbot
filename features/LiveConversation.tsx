@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 // FIX: import from @google/genai instead of @google/ai/generativelanguage
 import { LiveServerMessage, LiveSession, FunctionDeclaration, Type, FunctionCall } from '@google/genai';
 import { GeminiService } from '../services/geminiService';
 import FeatureLayout from './common/FeatureLayout';
 import { decode, decodeAudioData, createPcmBlob, fileToBase64, formatBytes, base64ToBlob, readFileContent, encode } from '../utils/helpers';
-import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon, PaperclipIcon, SendIcon } from '../components/Icons';
+import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon, PaperclipIcon, SendIcon, UploadIcon } from '../components/Icons';
 import useGeolocation from '../hooks/useGeolocation';
 import type { GroundingSource, Persona } from '../types';
 import MarkdownRenderer from '../components/MarkdownRenderer';
@@ -176,7 +177,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     const location = useGeolocation();
     const micGainNodeRef = useRef<GainNode | null>(null);
     const outputGainNodeRef = useRef<GainNode | null>(null);
-    const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const transcriptEndRef = useRef<HTMLDivElement | null>(null);
     const isPausedRef = useRef(isPaused);
     const conversationSummaryRef = useRef<string | null>(null);
 
@@ -832,9 +833,17 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                  </Tooltip>
                                 </div>
                             )}
-                             <Tooltip text="Save the current session transcript and media to a downloadable file.">
-                                <button onClick={handleSaveSession} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Save Session</button>
-                             </Tooltip>
+                            <div className='flex gap-2'>
+                                <Tooltip text="Save the current session transcript and media to a downloadable file.">
+                                    <button onClick={handleSaveSession} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"><SaveIcon /></button>
+                                </Tooltip>
+                                <Tooltip text="Load a previously saved session file. This will end the current conversation.">
+                                    <label htmlFor="load-live-session" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors cursor-pointer">
+                                        <input id="load-live-session" type="file" className="hidden" accept=".json" onChange={handleLoadSession} />
+                                        <UploadIcon />
+                                    </label>
+                                </Tooltip>
+                            </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-800/50 p-3 rounded-lg">
                              <div>
