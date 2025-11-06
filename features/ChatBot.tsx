@@ -446,7 +446,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
                                     <MarkdownRenderer content={msg.parts[0].text} />
                                 )}
                                  {msg.role === 'model' && msg.parts[0].text && !isLoading && (
-                                    <button onClick={() => handleSaveMessage(msg.parts[0].text)} className="absolute -top-2 -right-2 bg-slate-800 p-1.5 rounded-full text-slate-400 hover:bg-blue-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity" title="Save to Library">
+                                    <button onClick={() => handleSaveMessage(msg.parts[0].text)} className="absolute -top-2 -right-2 bg-slate-800 p-1.5 rounded-full text-slate-400 hover:bg-blue-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity" title="Save response to File Library">
                                         <SaveIcon />
                                     </button>
                                 )}
@@ -469,30 +469,30 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
                     </div>
                 )}
                 <div className="mt-2 flex items-center space-x-2">
-                    <Tooltip text="Save Chat Session">
+                    <Tooltip text="Save the current chat conversation, persona, and file access settings to a downloadable file.">
                         <button onClick={handleSaveSession} disabled={isLoading || isSummarizing || messages.length === 0} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><SaveIcon /></button>
                     </Tooltip>
-                    <Tooltip text="Load Chat Session">
+                    <Tooltip text="Load a previously saved chat session file. This will overwrite the current conversation.">
                         <label htmlFor="load-chat-session" className={`bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors cursor-pointer ${isLoading || isSummarizing ? 'opacity-50' : ''}`}>
                             <input id="load-chat-session" type="file" className="hidden" accept=".json" onChange={handleLoadSession} disabled={isLoading || isSummarizing}/>
                             <UploadIcon /> 
                         </label>
                     </Tooltip>
-                    <Tooltip text="Clear chat history. This cannot be undone.">
+                    <Tooltip text="Permanently delete the entire conversation history. This action cannot be undone.">
                         <button onClick={handleClearHistory} disabled={isLoading || isSummarizing || messages.length === 0} className="bg-slate-700 hover:bg-red-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><TrashIcon /></button>
                     </Tooltip>
-                    <Tooltip text="Configure the chatbot's persona and personality.">
+                    <Tooltip text="Configure the AI's personality, role, voice, and other characteristics.">
                         <button onClick={() => setIsPersonaModalOpen(true)} disabled={isLoading || isSummarizing} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><SettingsIcon /></button>
                     </Tooltip>
-                     <Tooltip text="Grant AI access to files from your library for this chat session.">
+                     <Tooltip text="Grant the AI temporary access to files from your library for this chat session.">
                         <button onClick={() => setIsFileModalOpen(true)} disabled={isLoading || isSummarizing} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors disabled:opacity-50"><PaperclipIcon /></button>
                     </Tooltip>
                     
                     <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder={isSummarizing ? "Summarizing..." : "Type your message..."} rows={1} className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" disabled={isSummarizing} />
-                    <Tooltip text="Use Voice Input">
+                    <Tooltip text="Use your microphone to dictate your message instead of typing.">
                         <button onClick={handleToggleListening} disabled={isLoading || isSummarizing} className={`p-3 rounded-full transition-colors disabled:opacity-50 ${isListening ? 'bg-red-600 animate-pulse' : 'bg-slate-700 hover:bg-blue-600/50'}`}><MicIcon /></button>
                     </Tooltip>
-                    <Tooltip text={isTtsEnabled ? "Disable Character Voice" : "Enable Character Voice"}>
+                    <Tooltip text={isTtsEnabled ? "Disable text-to-speech for AI responses." : "Enable text-to-speech to hear the AI's responses."}>
                         <button onClick={() => setIsTtsEnabled(prev => !prev)} className="bg-slate-700 hover:bg-blue-600/50 p-3 rounded-full transition-colors">
                             {isTtsEnabled ? <Volume2Icon /> : <VolumeOffIcon />}
                         </button>

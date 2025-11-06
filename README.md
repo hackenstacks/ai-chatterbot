@@ -22,13 +22,13 @@ This AI Studio comes packed with a suite of powerful features:
 
 This application is designed to be **run directly in a web browser without any build steps** (like Vite, Webpack, or `npm`).
 
-The error you are seeing (`Failed to resolve import "./components/Icons" from "App.tsx"`) is because you are trying to run this project with a tool like Vite, which it is not configured for.
+The error `Failed to resolve import "./components/Icons" from "App.tsx"` is a strong indicator that you are trying to run this project with a build tool it is not configured for.
 
 Here is the correct way to run this application:
 
 1.  **Ensure all files are in the same directory**: Make sure `index.html`, `index.tsx`, `App.tsx`, and all other `.ts` and `.tsx` files are in the correct folder structure as provided.
 2.  **Use a simple web server**: You cannot open `index.html` directly from your file system (`file:///...`) due to security restrictions (CORS) related to ES modules. You need to serve the files from a local web server.
-    *   **If you have Python installed:**
+    *   **If you have Python installed (Recommended):**
         ```bash
         # In your project directory, run one of these commands
         python -m http.server
@@ -48,7 +48,7 @@ Here is the correct way to run this application:
     *   **Using a VS Code Extension:**
         Extensions like [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) are perfect for this. Simply install it, right-click on `index.html`, and choose "Open with Live Server".
 
-3.  **API Key**: This application is designed to run in an environment where the `process.env.API_KEY` is provided. When running locally with a simple server, the API key will be `undefined`, and API calls will fail. You would need to temporarily modify the code in `services/geminiService.ts` to hardcode your key for local testing:
+3.  **API Key**: This application is designed to run in an environment where the `process.env.API_KEY` is provided. When running locally with a simple server, the API key will be `undefined`, and API calls will fail. You must temporarily modify the code in `services/geminiService.ts` to hardcode your key for local testing:
 
     ```typescript
     // In services/geminiService.ts (FOR LOCAL TESTING ONLY)
@@ -64,10 +64,44 @@ Here is the correct way to run this application:
     ```
     **⚠️ IMPORTANT:** Remember to remove your hardcoded key before sharing or deploying the code!
 
-## ⚙️ Configuration
+## 📘 Feature Guide
 
-*   **API Key**: As mentioned above, the API key is expected to be available as `process.env.API_KEY`. The provided code does not include any UI for setting this key.
-*   **Data Storage**: All user data is stored locally in the browser's IndexedDB. It is encrypted using the password you provide on first launch.
+*   ### 🗣️ **Live Conversation**
+    *   **What it is**: A real-time, voice-to-voice chat with Gemini.
+    *   **How to use**: Click `Start Conversation`. Your browser will ask for microphone permission. Once connected, just speak. You can upload an image, video, or audio file for the AI to discuss with you.
+    *   **Pro-Tip**: You can give complex commands like, *"Analyze the video I uploaded and then search the web for more information about the main topic."*
+
+*   ### 💬 **Chat**
+    *   **What it is**: A familiar text-based chat interface.
+    *   **How to use**: Type your message and press Enter. Use the toolbar icons to configure the AI's persona (`⚙️`), grant access to files from your library (`📎`), or use voice-to-text (`🎤`).
+    *   **Pro-Tip**: Create a custom character in `Settings` and apply it here for a unique role-playing experience. You can even generate images by typing `/imagine a red sports car`.
+
+*   ### 📂 **File Library**
+    *   **What it is**: Your secure, local storage for all files related to the AI.
+    *   **How to use**: Drag and drop files into the upload area. Once added, they can be accessed by the AI in the `Chat` or `Live Conversation` features. You can `Archive` files to hide them from the active list.
+    *   **Pro-Tip**: Upload text documents, images, or short video clips that you frequently reference in your conversations with the AI.
+
+*   ### ⚙️ **Settings**
+    *   **What it is**: The control center for your app.
+    *   **How to use**: Create, edit, and manage your AI character personas. Import characters from TavernAI (`.png` or `.json`). You can also export an encrypted backup of all your data (files, chats, personas) or import a backup to restore your state.
+    *   **Pro-Tip**: Choose a default voice for the `Live Conversation` feature that best suits your preference.
+
+## ❓ Frequently Asked Questions (FAQ)
+
+*   **Q: Is my data private?**
+    *   **A:** <strong style="color: #4ade80;">Yes.</strong> All your data—files, chat history, and personas—is **end-to-end encrypted** with a password you create. This data is stored exclusively in your browser's IndexedDB and is never sent to any server.
+
+*   **Q: What happens if I forget my password?**
+    *   **A:** <strong style="color: #f87171;">Your data is permanently lost.</strong> Because the encryption is handled entirely on your device, there is no "Forgot Password" feature. We cannot recover your data. You will have to reset the application, which deletes everything.
+
+*   **Q: Why do I get an error when I open `index.html` directly?**
+    *   **A:** Modern JavaScript (ES Modules) has security rules that prevent it from running from `file:///` URLs. You **must** serve the files using a simple local web server as described in the "How to Run" section.
+
+*   **Q: Why can't the AI access a website in Live Conversation or Chat?**
+    *   **A:** Web security policies (CORS) prevent a browser from directly accessing content on other websites. This is a limitation of web technology, not the AI. For a robust solution, this would require a server-side proxy.
+
+*   **Q: Why is video analysis limited to 10MB?**
+    *   **A:** Processing large files entirely in the browser consumes a lot of memory. The limit is in place to prevent the application from crashing, especially on devices with less RAM.
 
 ## 💻 Core Technologies
 

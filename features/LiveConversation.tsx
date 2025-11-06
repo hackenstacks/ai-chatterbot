@@ -809,7 +809,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                     <div className="flex-shrink-0 flex flex-col gap-4">
                         <div className="flex items-center justify-center flex-wrap gap-2">
                             {connectionState !== 'connected' ? (
-                                <Tooltip text="Begin a real-time voice conversation with the AI. Your microphone will be activated.">
+                                <Tooltip text="Start a live voice session with Gemini. Your browser will ask for microphone permission.">
                                     <button onClick={() => handleStartConversation()} disabled={isBusy} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors disabled:bg-slate-600">
                                         <MicIcon />
                                         <span>{isBusy ? 'Connecting...' : 'Start Conversation'}</span>
@@ -817,7 +817,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                 </Tooltip>
                             ) : (
                                 <div className="flex items-center space-x-2">
-                                <Tooltip text="Stop the current voice conversation and disconnect from the AI.">
+                                <Tooltip text="End the current voice conversation and disconnect from the AI.">
                                     <div className="relative">
                                         <button onClick={handleStopConversation} className="relative z-10 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
                                             <MicIcon />
@@ -826,7 +826,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                         <div className="absolute top-0 left-0 w-full h-full rounded-lg bg-green-500/50 animate-ping"></div>
                                     </div>
                                 </Tooltip>
-                                 <Tooltip text={isPaused ? "Resume listening" : "Pause listening"}>
+                                 <Tooltip text={isPaused ? "Resume sending audio to the AI." : "Temporarily pause sending audio to the AI."}>
                                         <button onClick={() => setIsPaused(!isPaused)} className={`font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors ${isPaused ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-slate-600 hover:bg-slate-700'} text-white`}>
                                             <span>{isPaused ? "Resume" : "Pause"}</span>
                                         </button>
@@ -834,7 +834,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                 </div>
                             )}
                             <div className='flex gap-2'>
-                                <Tooltip text="Save the current session transcript and media to a downloadable file.">
+                                <Tooltip text="Save the current session (transcript, media, and results) to a downloadable file.">
                                     <button onClick={handleSaveSession} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"><SaveIcon /></button>
                                 </Tooltip>
                                 <Tooltip text="Load a previously saved session file. This will end the current conversation.">
@@ -853,11 +853,11 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                 </select>
                             </div>
                             <div className="flex items-center space-x-2 text-slate-300">
-                                <Tooltip text="Microphone Input Gain"><MicIcon /></Tooltip>
+                                <Tooltip text="Adjust the sensitivity of your microphone."><MicIcon /></Tooltip>
                                 <input type="range" id="mic-gain" min="0" max="2" step="0.1" value={micGain} onChange={e => setMicGain(parseFloat(e.target.value))} className="w-full" />
                             </div>
                              <div className="flex items-center space-x-2 text-slate-300">
-                                <Tooltip text="AI Output Volume"><Volume2Icon /></Tooltip>
+                                <Tooltip text="Adjust the volume of the AI's spoken response."><Volume2Icon /></Tooltip>
                                 <input type="range" id="output-gain" min="0" max="1.5" step="0.05" value={outputGain} onChange={e => setOutputGain(parseFloat(e.target.value))} className="w-full" />
                             </div>
                         </div>
@@ -873,7 +873,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                                 </label>
                             </Tooltip>
                             <textarea value={textInput} onChange={e => setTextInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} placeholder="Type a message... AI will 'hear' it via TTS" rows={1} className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" disabled={connectionState !== 'connected'} />
-                             <Tooltip text="Send text and/or attached image. Text is sent via TTS-to-mic loop." position="top">
+                             <Tooltip text="Send text and/or attached image. Your text will be spoken via TTS for the AI to hear." position="top">
                                 <button onClick={handleSendMessage} disabled={connectionState !== 'connected' || (!textInput.trim() && !imageInput)} className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white p-3 rounded-full transition-colors"><SendIcon /></button>
                             </Tooltip>
                         </div>

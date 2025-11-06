@@ -9,55 +9,45 @@ import PersonaConfigModal from './common/PersonaConfigModal';
 import PasswordPromptModal from '../components/PasswordPromptModal';
 import { LIVE_VOICES } from '../constants';
 
-// Helper to find JSON in a PNG ArrayBuffer (for TavernAI cards)
+// Helper to find and parse character JSON from a PNG's tEXt chunk
 const findJsonInPng = (arrayBuffer: ArrayBuffer): string | null => {
-    const uint8 = new Uint8Array(arrayBuffer);
-    const keyword = 'chara'; // Common keyword for character data in PNGs
-    const keywordBytes = new TextEncoder().encode(keyword);
-    
-    // Find the keyword
-    for (let i = 0; i < uint8.length - keywordBytes.length; i++) {
-        let found = true;
-        for (let j = 0; j < keywordBytes.length; j++) {
-            if (uint8[i + j] !== keywordBytes[j]) {
-                found = false;
-                break;
+    const dataView = new DataView(arrayBuffer);
+    // Check for PNG signature
+    if (dataView.getUint32(0) !== 0x89504E47 || dataView.getUint32(4) !== 0x0D0A1A0A) {
+        console.error("Not a valid PNG file.");
+        return null;
+    }
+
+    let offset = 8;
+    while (offset < dataView.byteLength) {
+        const length = dataView.getUint32(offset);
+        const type = new TextDecoder().decode(new Uint8Array(arrayBuffer, offset + 4, 4));
+
+        if (type === 'tEXt') {
+            const chunkData = new Uint8Array(arrayBuffer, offset + 8, length);
+            const textDecoder = new TextDecoder('latin1'); // Use latin1 to handle null bytes correctly
+            const text = textDecoder.decode(chunkData);
+            
+            // TavernAI cards store data in a 'chara' keyword tEXt chunk
+            if (text.startsWith('chara\0')) {
+                const base64Data = text.substring(6); // 6 is length of "chara" + null terminator
+                try {
+                    // The data is base64 encoded JSON
+                    return atob(base64Data);
+                } catch (e) {
+                    console.error("Failed to decode base64 data from tEXt chunk", e);
+                }
             }
+        }
+
+        if (type === 'IEND') {
+            break; // End of chunks
         }
         
-        if (found) {
-            // After finding "chara", search forward for the JSON data, which is typically base64 encoded
-            // between two quote characters.
-            let startQuote = -1;
-            for (let k = i + keywordBytes.length; k < uint8.length; k++) {
-                if (uint8[k] === 34 /* '"' */) {
-                    startQuote = k;
-                    break;
-                }
-            }
-
-            if (startQuote !== -1) {
-                let endQuote = -1;
-                for (let l = startQuote + 1; l < uint8.length; l++) {
-                     if (uint8[l] === 34 /* '"' */) {
-                        endQuote = l;
-                        break;
-                    }
-                }
-
-                if (endQuote !== -1) {
-                    const base64Bytes = uint8.slice(startQuote + 1, endQuote);
-                    try {
-                        const base64String = new TextDecoder().decode(base64Bytes);
-                        return atob(base64String); // Decode base64 to get JSON string
-                    } catch (e) {
-                        console.error("Failed to decode base64 data from PNG", e);
-                        // Continue searching in case of false positive
-                    }
-                }
-            }
-        }
+        // Move to the next chunk: 4 bytes for length, 4 for type, data length, 4 for CRC
+        offset += 12 + length; 
     }
+
     return null;
 };
 
@@ -274,7 +264,7 @@ const Settings: React.FC = () => {
                 const buffer = await file.arrayBuffer();
                 fileContent = findJsonInPng(buffer);
                 if (!fileContent) {
-                    throw new Error("Could not find character data in PNG file.");
+                    throw new Error("Could not find character data in PNG file. The file may not be a valid character card.");
                 }
             } else {
                 throw new Error("Unsupported file type. Please use .json or .png character cards.");

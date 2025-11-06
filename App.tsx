@@ -32,16 +32,16 @@ import Spinner from './components/Spinner';
 
 
 const features: Feature[] = [
-  { id: 'live', name: 'Live Conversation', description: 'Speak with Gemini in real-time.', icon: <RadioTowerIcon />, component: LiveConversation },
-  { id: 'chat', name: 'Chat', description: 'Have a text-based conversation.', icon: <MessageSquareIcon />, component: ChatBot },
-  { id: 'reasoning', name: 'Complex Reasoning', description: 'Tackle complex problems with Thinking Mode.', icon: <BrainCircuitIcon />, component: ComplexReasoning },
-  { id: 'grounding', name: 'Grounded Search', description: 'Get up-to-date answers from the web & maps.', icon: <GlobeIcon />, component: GroundingSearch },
-  { id: 'image-analysis', name: 'Image Analysis', description: 'Understand the content of your images.', icon: <ImageIcon />, component: ImageAnalysis },
-  { id: 'image-gen', name: 'Image Generation', description: 'Create stunning visuals from text.', icon: <SparklesIcon />, component: ImageGeneration },
-  { id: 'video-analysis', name: 'Video Analysis', description: 'Extract insights from video files.', icon: <VideoIcon />, component: VideoAnalysis },
-  { id: 'audio-transcription', name: 'Audio Transcription', description: 'Transcribe spoken words from audio files.', icon: <MicIcon />, component: AudioTranscription },
-  { id: 'file-library', name: 'File Library', description: 'Manage and archive your encrypted local files.', icon: <FilesIcon />, component: FileLibrary },
-  { id: 'settings', name: 'Settings', description: 'Manage application settings and data.', icon: <SettingsIcon />, component: Settings },
+  { id: 'live', name: 'Live Conversation', description: 'Speak with Gemini in real-time. Use voice commands for complex tasks like web searches, image generation, and file analysis.', icon: <RadioTowerIcon />, component: LiveConversation },
+  { id: 'chat', name: 'Chat', description: 'Engage in a text-based conversation with a customizable AI persona. Supports in-chat tool use and file context.', icon: <MessageSquareIcon />, component: ChatBot },
+  { id: 'reasoning', name: 'Complex Reasoning', description: 'Tackle complex problems with Gemini Pro. "Thinking Mode" is enabled for deeper analysis and more thoughtful responses.', icon: <BrainCircuitIcon />, component: ComplexReasoning },
+  { id: 'grounding', name: 'Grounded Search', description: 'Get up-to-date, verifiable answers from Google Search and Maps. All responses include cited sources.', icon: <GlobeIcon />, component: GroundingSearch },
+  { id: 'image-analysis', name: 'Image Analysis', description: 'Upload an image and ask questions about its content. Gemini can identify objects, read text, and describe scenes.', icon: <ImageIcon />, component: ImageAnalysis },
+  { id: 'image-gen', name: 'Image Generation', description: 'Create stunning visuals from text prompts using the powerful Imagen 4.0 model. Includes style presets and negative prompts.', icon: <SparklesIcon />, component: ImageGeneration },
+  { id: 'video-analysis', name: 'Video Analysis', description: 'Upload a short video to get summaries, scene descriptions, and answers to specific questions about its content.', icon: <VideoIcon />, component: VideoAnalysis },
+  { id: 'audio-transcription', name: 'Audio Transcription', description: 'Transcribe spoken words from various audio file formats into text with high accuracy.', icon: <MicIcon />, component: AudioTranscription },
+  { id: 'file-library', name: 'File Library', description: 'Manage your personal, encrypted local file storage. Uploaded files can be accessed by the AI across different features.', icon: <FilesIcon />, component: FileLibrary },
+  { id: 'settings', name: 'Settings', description: 'Configure AI personas, manage voice settings, and securely backup or restore all your application data.', icon: <SettingsIcon />, component: Settings },
 ];
 
 const App: React.FC = () => {
