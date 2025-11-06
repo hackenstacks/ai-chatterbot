@@ -99,7 +99,13 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
     }, []);
 
     useEffect(() => {
-        initializeChatState();
+        initializeChatState(); // Initial load
+
+        window.addEventListener('personasUpdated', initializeChatState);
+
+        return () => {
+            window.removeEventListener('personasUpdated', initializeChatState);
+        };
     }, [initializeChatState]);
 
     useEffect(() => {
@@ -143,7 +149,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
             updatedPersonas.push(newPersona);
         }
         await dbService.savePersonas(updatedPersonas);
-        setActivePersona(newPersona);
+        // Dispatch event instead of just setting local state
+        window.dispatchEvent(new CustomEvent('personasUpdated'));
     };
 
     const scrollToBottom = () => {

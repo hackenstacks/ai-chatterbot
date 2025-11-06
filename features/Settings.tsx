@@ -209,6 +209,7 @@ const Settings: React.FC = () => {
 
         setPersonas(updatedPersonas);
         await dbService.savePersonas(updatedPersonas);
+        window.dispatchEvent(new CustomEvent('personasUpdated'));
         setIsPersonaModalOpen(false);
         setEditingPersona(null);
     };
@@ -225,6 +226,7 @@ const Settings: React.FC = () => {
 
         setPersonas(updatedPersonas);
         await dbService.savePersonas(updatedPersonas);
+        window.dispatchEvent(new CustomEvent('personasUpdated'));
     };
 
     const handleSetActive = async (personaId: string) => {
@@ -234,6 +236,7 @@ const Settings: React.FC = () => {
         }));
         setPersonas(updatedPersonas);
         await dbService.savePersonas(updatedPersonas);
+        window.dispatchEvent(new CustomEvent('personasUpdated'));
     };
     
     const handleExportPersonas = () => {
@@ -294,6 +297,7 @@ const Settings: React.FC = () => {
                     });
                      setPersonas(combined);
                      await dbService.savePersonas(combined);
+                     window.dispatchEvent(new CustomEvent('personasUpdated'));
                      setSuccess(`${newCount} new characters imported successfully!`);
                      return; // Early exit for bulk import
                 }

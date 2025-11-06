@@ -191,7 +191,16 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     }, [transcripts, currentInterim]);
 
     useEffect(() => {
-        dbService.getPersonas().then(setPersonas).catch(console.error);
+        const loadPersonas = () => {
+            dbService.getPersonas().then(setPersonas).catch(console.error);
+        };
+
+        loadPersonas(); // Initial load
+
+        window.addEventListener('personasUpdated', loadPersonas);
+        return () => {
+            window.removeEventListener('personasUpdated', loadPersonas);
+        };
     }, []);
 
     useEffect(() => {
