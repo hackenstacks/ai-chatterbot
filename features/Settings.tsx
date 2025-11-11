@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import FeatureLayout from './common/FeatureLayout';
-import { dbService } from '../services/dbService';
-import { cryptoService } from '../services/cryptoService';
-import { DownloadIcon, UploadIcon, EditIcon, TrashIcon, ShareIcon } from '../components/Icons';
-import { Persona } from '../types';
-import PersonaConfigModal from './common/PersonaConfigModal';
-import PasswordPromptModal from '../components/PasswordPromptModal';
-import { LIVE_VOICES } from '../constants';
+import FeatureLayout from './common/FeatureLayout.tsx';
+import { dbService } from '../services/dbService.ts';
+import { cryptoService } from '../services/cryptoService.ts';
+import { DownloadIcon, UploadIcon, EditIcon, TrashIcon, ShareIcon } from '../components/Icons.tsx';
+import { Persona } from '../types.ts';
+import PersonaConfigModal from './common/PersonaConfigModal.tsx';
+import PasswordPromptModal from '../components/PasswordPromptModal.tsx';
+import { LIVE_VOICES } from '../constants.ts';
 
 // Helper to find and parse character JSON from a PNG's tEXt chunk
 const findJsonInPng = (arrayBuffer: ArrayBuffer): string | null => {

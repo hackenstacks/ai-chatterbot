@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { XIcon } from './Icons';
+import { XIcon } from './Icons.tsx';
 
 interface HelpModalProps {
   isOpen: boolean;

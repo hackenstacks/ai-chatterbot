@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
-import FeatureLayout from './common/FeatureLayout';
-import { formatBytes, fileToBase64, base64ToBlob } from '../utils/helpers';
-import { FileTextIcon, ArchiveIcon, TrashIcon } from '../components/Icons';
-import { dbService, StoredFile } from '../services/dbService';
+import FeatureLayout from './common/FeatureLayout.tsx';
+import { formatBytes, fileToBase64, base64ToBlob } from '../utils/helpers.ts';
+import { FileTextIcon, ArchiveIcon, TrashIcon } from '../components/Icons.tsx';
+import { dbService, StoredFile } from '../services/dbService.ts';
 
 interface FileLibraryProps {
     documents: StoredFile[];

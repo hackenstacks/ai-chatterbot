@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { XIcon } from './Icons';
+import { XIcon } from './Icons.tsx';
 
 interface PasswordPromptModalProps {
     isOpen: boolean;

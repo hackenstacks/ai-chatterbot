@@ -1,15 +1,16 @@
+
 import React, { useState } from 'react';
-import { GeminiService } from '../services/geminiService';
-import useGeolocation from '../hooks/useGeolocation';
-import FeatureLayout from './common/FeatureLayout';
-import Spinner from '../components/Spinner';
-import MarkdownRenderer from '../components/MarkdownRenderer';
-import { GlobeIcon, SaveIcon } from '../components/Icons';
-import type { GroundingSource } from '../types';
-import { dbService, StoredFile } from '../services/dbService';
-import { encode } from '../utils/helpers';
-import ErrorDisplay from '../components/ErrorDisplay';
-import { parseError, FormattedError } from '../utils/errorUtils';
+import { GeminiService } from '../services/geminiService.ts';
+import useGeolocation from '../hooks/useGeolocation.ts';
+import FeatureLayout from './common/FeatureLayout.tsx';
+import Spinner from '../components/Spinner.tsx';
+import MarkdownRenderer from '../components/MarkdownRenderer.tsx';
+import { GlobeIcon, SaveIcon } from '../components/Icons.tsx';
+import type { GroundingSource } from '../types.ts';
+import { dbService, StoredFile } from '../services/dbService.ts';
+import { encode } from '../utils/helpers.ts';
+import ErrorDisplay from '../components/ErrorDisplay.tsx';
+import { parseError, FormattedError } from '../utils/errorUtils.ts';
 
 interface GroundingSearchProps {
     documents: StoredFile[];

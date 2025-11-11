@@ -1,4 +1,5 @@
-import { encode, decode } from '../utils/helpers';
+
+import { encode, decode } from '../utils/helpers.ts';
 
 // In-memory keys for the current session
 let dataEncryptionKey: CryptoKey | null = null;

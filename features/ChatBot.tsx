@@ -1,18 +1,18 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Chat, FunctionCall, Part } from '@google/genai';
-import { GeminiService } from '../services/geminiService';
-import type { ChatMessage, Persona } from '../types';
-import FeatureLayout from './common/FeatureLayout';
-import MarkdownRenderer from '../components/MarkdownRenderer';
-import { SendIcon, TrashIcon, SettingsIcon, PaperclipIcon, MicIcon, Volume2Icon, VolumeOffIcon, SparklesIcon, SaveIcon, UploadIcon } from '../components/Icons';
-import Spinner from '../components/Spinner';
-import Tooltip from '../components/Tooltip';
-import { dbService, StoredFile } from '../services/dbService';
-import PersonaConfigModal from './common/PersonaConfigModal';
-import FileAccessModal from './common/FileAccessModal';
-import { encode, fileToBase64, base64ToBlob } from '../utils/helpers';
-import { parseError } from '../utils/errorUtils';
+import { GeminiService } from '../services/geminiService.ts';
+import type { ChatMessage, Persona } from '../types.ts';
+import FeatureLayout from './common/FeatureLayout.tsx';
+import MarkdownRenderer from '../components/MarkdownRenderer.tsx';
+import { SendIcon, TrashIcon, SettingsIcon, PaperclipIcon, MicIcon, Volume2Icon, VolumeOffIcon, SparklesIcon, SaveIcon, UploadIcon } from '../components/Icons.tsx';
+import Spinner from '../components/Spinner.tsx';
+import Tooltip from '../components/Tooltip.tsx';
+import { dbService, StoredFile } from '../services/dbService.ts';
+import PersonaConfigModal from './common/PersonaConfigModal.tsx';
+import FileAccessModal from './common/FileAccessModal.tsx';
+import { encode, fileToBase64, base64ToBlob } from '../utils/helpers.ts';
+import { parseError } from '../utils/errorUtils.ts';
 
 
 const HISTORY_SUMMARY_THRESHOLD = 10;
@@ -56,7 +56,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
     const [isTtsEnabled, setIsTtsEnabled] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const recognitionRef = useRef<any>(null); // SpeechRecognition
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement | null>(null);
     
     const constructSystemPrompt = useCallback((p: Persona, files: string[]): string => {
         let prompt = p.systemPrompt || `You are a helpful AI assistant.`;

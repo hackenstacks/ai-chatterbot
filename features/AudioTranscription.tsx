@@ -1,12 +1,13 @@
+
 import React, { useState } from 'react';
-import { GeminiService } from '../services/geminiService';
-import { fileToBase64, formatBytes, encode } from '../utils/helpers';
-import FeatureLayout from './common/FeatureLayout';
-import Spinner from '../components/Spinner';
-import { dbService, StoredFile } from '../services/dbService';
-import { SaveIcon } from '../components/Icons';
-import ErrorDisplay from '../components/ErrorDisplay';
-import { parseError, FormattedError } from '../utils/errorUtils';
+import { GeminiService } from '../services/geminiService.ts';
+import { fileToBase64, formatBytes, encode } from '../utils/helpers.ts';
+import FeatureLayout from './common/FeatureLayout.tsx';
+import Spinner from '../components/Spinner.tsx';
+import { dbService, StoredFile } from '../services/dbService.ts';
+import { SaveIcon } from '../components/Icons.tsx';
+import ErrorDisplay from '../components/ErrorDisplay.tsx';
+import { parseError, FormattedError } from '../utils/errorUtils.ts';
 
 interface AudioTranscriptionProps {
     documents: StoredFile[];

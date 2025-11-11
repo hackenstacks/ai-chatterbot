@@ -1,7 +1,8 @@
+
 import React from 'react';
-import type { StoredFile } from '../../services/dbService';
-import { XIcon, FileTextIcon } from '../../components/Icons';
-import { formatBytes } from '../../utils/helpers';
+import type { StoredFile } from '../../services/dbService.ts';
+import { XIcon, FileTextIcon } from '../../components/Icons.tsx';
+import { formatBytes } from '../../utils/helpers.ts';
 
 interface FileAccessModalProps {
   isOpen: boolean;

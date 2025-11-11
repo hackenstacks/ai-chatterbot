@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
-import type { Persona } from '../../types';
-import { XIcon, Wand2Icon } from '../../components/Icons';
-import { GeminiService } from '../../services/geminiService';
-import Spinner from '../../components/Spinner';
+import type { Persona } from '../../types.ts';
+import { XIcon, Wand2Icon } from '../../components/Icons.tsx';
+import { GeminiService } from '../../services/geminiService.ts';
+import Spinner from '../../components/Spinner.tsx';
 
 interface PersonaConfigModalProps {
   isOpen: boolean;

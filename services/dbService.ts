@@ -1,5 +1,6 @@
-import { ChatMessage, Persona } from '../types';
-import { cryptoService } from './cryptoService';
+
+import { ChatMessage, Persona } from '../types.ts';
+import { cryptoService } from './cryptoService.ts';
 
 const DB_NAME = 'GeminiAIStudioDB';
 const DB_VERSION = 3; // Incremented version for new store

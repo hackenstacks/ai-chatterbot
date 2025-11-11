@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { Feature, FeatureId } from './types';
+import type { Feature, FeatureId } from './types.ts';
 import {
   MessageSquareIcon,
   ImageIcon,
@@ -13,22 +13,22 @@ import {
   FilesIcon,
   HelpCircleIcon,
   SettingsIcon
-} from './components/Icons';
-import LiveConversation from './features/LiveConversation';
-import ChatBot from './features/ChatBot';
-import ImageAnalysis from './features/ImageAnalysis';
-import ImageGeneration from './features/ImageGeneration';
-import VideoAnalysis from './features/VideoAnalysis';
-import AudioTranscription from './features/AudioTranscription';
-import FileLibrary from './features/FileLibrary';
-import GroundingSearch from './features/GroundingSearch';
-import ComplexReasoning from './features/ComplexReasoning';
-import Settings from './features/Settings';
-import Tooltip from './components/Tooltip';
-import HelpModal from './components/HelpModal';
-import { dbService, StoredFile } from './services/dbService';
-import Auth from './components/Auth';
-import Spinner from './components/Spinner';
+} from './components/Icons.tsx';
+import LiveConversation from './features/LiveConversation.tsx';
+import ChatBot from './features/ChatBot.tsx';
+import ImageAnalysis from './features/ImageAnalysis.tsx';
+import ImageGeneration from './features/ImageGeneration.tsx';
+import VideoAnalysis from './features/VideoAnalysis.tsx';
+import AudioTranscription from './features/AudioTranscription.tsx';
+import FileLibrary from './features/FileLibrary.tsx';
+import GroundingSearch from './features/GroundingSearch.tsx';
+import ComplexReasoning from './features/ComplexReasoning.tsx';
+import Settings from './features/Settings.tsx';
+import Tooltip from './components/Tooltip.tsx';
+import HelpModal from './components/HelpModal.tsx';
+import { dbService, StoredFile } from './services/dbService.ts';
+import Auth from './components/Auth.tsx';
+import Spinner from './components/Spinner.tsx';
 
 
 const features: Feature[] = [

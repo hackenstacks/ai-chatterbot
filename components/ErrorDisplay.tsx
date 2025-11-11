@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { AlertTriangleIcon, XIcon } from './Icons';
-import type { FormattedError } from '../utils/errorUtils';
+import { AlertTriangleIcon, XIcon } from './Icons.tsx';
+import type { FormattedError } from '../utils/errorUtils.ts';
 
 interface ErrorDisplayProps {
   error: FormattedError;

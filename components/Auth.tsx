@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { cryptoService } from '../services/cryptoService';
+import { cryptoService } from '../services/cryptoService.ts';
 
 interface AuthProps {
     onLoginSuccess: () => void;

@@ -1,6 +1,6 @@
 // FIX: import from @google/genai instead of @google/ai/generativelanguage
 import { GoogleGenAI, Type, Modality, Chat, GenerateContentResponse, GroundingChunk, LiveServerMessage, FunctionDeclaration, Content } from '@google/genai';
-import { Persona } from '../types';
+import { Persona } from '../types.ts';
 
 const getAi = (): GoogleGenAI => {
     if (!process.env.API_KEY) {

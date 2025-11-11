@@ -2,18 +2,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 // FIX: import from @google/genai instead of @google/ai/generativelanguage
 import { LiveServerMessage, LiveSession, FunctionDeclaration, Type, FunctionCall } from '@google/genai';
-import { GeminiService } from '../services/geminiService';
-import FeatureLayout from './common/FeatureLayout';
-import { decode, decodeAudioData, createPcmBlob, fileToBase64, formatBytes, base64ToBlob, readFileContent, encode } from '../utils/helpers';
-import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon, PaperclipIcon, SendIcon, UploadIcon } from '../components/Icons';
-import useGeolocation from '../hooks/useGeolocation';
-import type { GroundingSource, Persona } from '../types';
-import MarkdownRenderer from '../components/MarkdownRenderer';
-import Tooltip from '../components/Tooltip';
-import { dbService, StoredFile } from '../services/dbService';
-import { parseError, FormattedError } from '../utils/errorUtils';
-import ErrorDisplay from '../components/ErrorDisplay';
-import { LIVE_VOICES } from '../constants';
+import { GeminiService } from '../services/geminiService.ts';
+import FeatureLayout from './common/FeatureLayout.tsx';
+import { decode, decodeAudioData, createPcmBlob, fileToBase64, formatBytes, base64ToBlob, readFileContent, encode } from '../utils/helpers.ts';
+import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon, PaperclipIcon, SendIcon, UploadIcon } from '../components/Icons.tsx';
+import useGeolocation from '../hooks/useGeolocation.ts';
+import type { GroundingSource, Persona } from '../types.ts';
+import MarkdownRenderer from '../components/MarkdownRenderer.tsx';
+import Tooltip from '../components/Tooltip.tsx';
+import { dbService, StoredFile } from '../services/dbService.ts';
+import { parseError, FormattedError } from '../utils/errorUtils.ts';
+import ErrorDisplay from '../components/ErrorDisplay.tsx';
+import { LIVE_VOICES } from '../constants.ts';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error' | 'closed' | 'reconnecting';
 const MAX_RECONNECT_ATTEMPTS = 3;
