@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LiveServerMessage, LiveSession, FunctionDeclaration, Type, FunctionCall } from '@google/genai';
 import { GeminiService } from '../services/geminiService.ts';
 import FeatureLayout from './common/FeatureLayout.tsx';
-import { decode, decodeAudioData, createPcmBlob, fileToBase64, formatBytes, base64ToBlob, readFileContent, encode } from '../utils/helpers.ts';
+// FIX: Rename `encode` to `base64Encode` on import to avoid name collisions.
+import { decode, decodeAudioData, createPcmBlob, fileToBase64, formatBytes, base64ToBlob, readFileContent, encode as base64Encode } from '../utils/helpers.ts';
 import { MicIcon, GlobeIcon, Volume2Icon, SaveIcon, PaperclipIcon, SendIcon, UploadIcon } from '../components/Icons.tsx';
 import useGeolocation from '../hooks/useGeolocation.ts';
 import type { GroundingSource, Persona } from '../types.ts';
@@ -378,7 +379,8 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         if (type === 'text') {
             const textEncoder = new TextEncoder();
             const contentBytes = textEncoder.encode(content);
-            const base64Data = encode(contentBytes);
+            // FIX: Use renamed `base64Encode` function.
+            const base64Data = base64Encode(contentBytes);
             newFile = {
                 name: fileName,
                 type: 'text/plain',
@@ -775,8 +777,10 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     const renderMedia = () => {
         if (!file || !fileUrl) return <p className="text-slate-500 text-center">Upload a file for temporary analysis.</p>;
         if (file.type.startsWith("image/")) return <img src={fileUrl} alt={file.name} className="max-h-full max-w-full object-contain rounded-lg" />;
-        if (file.type.startsWith("video/")) return <video ref={mediaRef} src={fileUrl} controls className="w-full rounded-lg" />;
-        if (file.type.startsWith("audio/")) return <audio ref={mediaRef} src={fileUrl} controls className="w-full" />;
+        // FIX: Cast mediaRef to the correct element type to resolve union type conflict.
+        if (file.type.startsWith("video/")) return <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={fileUrl} controls className="w-full rounded-lg" />;
+        // FIX: Cast mediaRef to the correct element type to resolve union type conflict.
+        if (file.type.startsWith("audio/")) return <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} src={fileUrl} controls className="w-full" />;
         return <div className="text-center text-slate-300"> <p className="font-bold">{file.name}</p> <p className="text-sm">{formatBytes(file.size)}</p> d></div>;
     };
     

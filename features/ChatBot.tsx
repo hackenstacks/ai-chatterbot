@@ -11,7 +11,8 @@ import Tooltip from '../components/Tooltip.tsx';
 import { dbService, StoredFile } from '../services/dbService.ts';
 import PersonaConfigModal from './common/PersonaConfigModal.tsx';
 import FileAccessModal from './common/FileAccessModal.tsx';
-import { encode, fileToBase64, base64ToBlob } from '../utils/helpers.ts';
+// FIX: Rename `encode` to `base64Encode` on import to avoid name collisions.
+import { encode as base64Encode, fileToBase64, base64ToBlob } from '../utils/helpers.ts';
 import { parseError } from '../utils/errorUtils.ts';
 
 
@@ -329,7 +330,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
 
         const textEncoder = new TextEncoder();
         const contentBytes = textEncoder.encode(content);
-        const base64Data = encode(contentBytes);
+        // FIX: Use renamed `base64Encode` function.
+        const base64Data = base64Encode(contentBytes);
         
         const newFile: StoredFile = {
             name: fileName,

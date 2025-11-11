@@ -14,6 +14,12 @@ interface PersonaConfigModalProps {
 
 type LoadingField = keyof Persona | 'avatar' | 'autofill' | null;
 
+// FIX: Create a mapped type that only includes keys from Persona whose values are strings.
+// This prevents passing a boolean field like `isActive` to a text input.
+type StringPersonaField = {
+  [K in keyof Persona]: Persona[K] extends string | undefined ? K : never;
+}[keyof Persona];
+
 const geminiVoices = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
 
 const PersonaConfigModal: React.FC<PersonaConfigModalProps> = ({ isOpen, onClose, onSave, initialPersona }) => {
@@ -92,7 +98,7 @@ const PersonaConfigModal: React.FC<PersonaConfigModalProps> = ({ isOpen, onClose
     onClose();
   };
   
-  const renderField = (field: keyof Persona, label: string, placeholder: string, isTextarea: boolean = false, rows: number = 3) => (
+  const renderField = (field: StringPersonaField, label: string, placeholder: string, isTextarea: boolean = false, rows: number = 3) => (
       <div>
         <label htmlFor={field} className="block text-sm font-medium text-slate-300 mb-1">{label}</label>
         <div className="flex items-center space-x-2">
