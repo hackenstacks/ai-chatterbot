@@ -6,8 +6,7 @@ import Spinner from '../components/Spinner.tsx';
 import MarkdownRenderer from '../components/MarkdownRenderer.tsx';
 import { dbService, StoredFile } from '../services/dbService.ts';
 import { SaveIcon } from '../components/Icons.tsx';
-// FIX: Rename `encode` to `base64Encode` on import to avoid name collisions.
-import { encode as base64Encode } from '../utils/helpers.ts';
+import { encode } from '../utils/helpers.ts';
 import ErrorDisplay from '../components/ErrorDisplay.tsx';
 import { parseError, FormattedError } from '../utils/errorUtils.ts';
 
@@ -54,8 +53,8 @@ const ComplexReasoning: React.FC<ComplexReasoningProps> = ({ documents, setDocum
         
         const textEncoder = new TextEncoder();
         const contentBytes = textEncoder.encode(result);
-        // FIX: Use renamed `base64Encode` function.
-        const base64Data = base64Encode(contentBytes);
+        // FIX: Replaced aliased `base64Encode` with direct `encode` call to resolve typing issue.
+        const base64Data = encode(contentBytes);
         
         const newFile: StoredFile = {
             name: fileName,

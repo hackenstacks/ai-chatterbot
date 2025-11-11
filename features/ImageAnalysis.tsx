@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
 import { GeminiService } from '../services/geminiService.ts';
-// FIX: Rename `encode` to `base64Encode` on import to avoid name collisions.
-import { fileToBase64, formatBytes, encode as base64Encode } from '../utils/helpers.ts';
+import { fileToBase64, formatBytes, encode } from '../utils/helpers.ts';
 import FeatureLayout from './common/FeatureLayout.tsx';
 import Spinner from '../components/Spinner.tsx';
 import MarkdownRenderer from '../components/MarkdownRenderer.tsx';
@@ -65,8 +64,8 @@ const ImageAnalysis: React.FC<ImageAnalysisProps> = ({ documents, setDocuments }
         
         const textEncoder = new TextEncoder();
         const contentBytes = textEncoder.encode(result);
-        // FIX: Use renamed `base64Encode` function.
-        const base64Data = base64Encode(contentBytes);
+        // FIX: Replaced aliased `base64Encode` with direct `encode` call to resolve typing issue.
+        const base64Data = encode(contentBytes);
         
         const newFile: StoredFile = {
             name: fileName,

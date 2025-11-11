@@ -8,8 +8,7 @@ import MarkdownRenderer from '../components/MarkdownRenderer.tsx';
 import { GlobeIcon, SaveIcon } from '../components/Icons.tsx';
 import type { GroundingSource } from '../types.ts';
 import { dbService, StoredFile } from '../services/dbService.ts';
-// FIX: Rename `encode` to `base64Encode` on import to avoid name collisions.
-import { encode as base64Encode } from '../utils/helpers.ts';
+import { encode } from '../utils/helpers.ts';
 import ErrorDisplay from '../components/ErrorDisplay.tsx';
 import { parseError, FormattedError } from '../utils/errorUtils.ts';
 
@@ -73,8 +72,8 @@ const GroundingSearch: React.FC<GroundingSearchProps> = ({ documents, setDocumen
         const fullContent = `${result}\n\nSources:\n${sources.map(s => `- ${s.title}: ${s.uri}`).join('\n')}`;
         const textEncoder = new TextEncoder();
         const contentBytes = textEncoder.encode(fullContent);
-        // FIX: Use renamed `base64Encode` function.
-        const base64Data = base64Encode(contentBytes);
+        // FIX: Replaced aliased `base64Encode` with direct `encode` call to resolve typing issue.
+        const base64Data = encode(contentBytes);
         
         const newFile: StoredFile = {
             name: fileName,
