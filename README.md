@@ -22,22 +22,21 @@ This AI Studio comes packed with a suite of powerful features:
 
 This application is designed to be **run directly in a web browser without any build steps** (like Vite, Webpack, or `npm`).
 
-The error `Failed to resolve import "./components/Icons" from "App.tsx"` is a strong indicator that you are trying to run this project with a build tool it is not configured for.
+The `MIME type` and `Failed to resolve import` errors are strong indicators that you are trying to run this project with an incorrect server setup.
 
 Here is the correct way to run this application:
 
-1.  **Ensure all files are in the same directory**: Make sure `index.html`, `index.tsx`, `App.tsx`, and all other `.ts` and `.tsx` files are in the correct folder structure as provided.
-2.  **Use a simple web server**: You cannot open `index.html` directly from your file system (`file:///...`) due to security restrictions (CORS) related to ES modules. You need to serve the files from a local web server.
-    *   **If you have Python installed (Recommended):**
+1.  **Ensure all files are in the same directory**: Make sure `index.html`, `server.py`, and all `.ts`/`.tsx` files are in the correct folder structure.
+2.  **Use the provided Python web server**: You cannot open `index.html` directly from your file system (`file:///...`). You need a local web server that can correctly identify TypeScript files (`.ts`/`.tsx`) as JavaScript.
+    *   **The Correct Way (with Python):**
+        This project includes a `server.py` file configured to work correctly.
         ```bash
-        # In your project directory, run one of these commands
-        python -m http.server
-        # or for Python 2
-        python -m SimpleHTTPServer
+        # In your project directory, run this command:
+        python server.py
         ```
         Then open `http://localhost:8000` in your browser.
-    *   **If you have Node.js installed:**
-        You can use a simple package like `serve`.
+    *   **Alternative (with Node.js):**
+        If you prefer Node.js, the `serve` package also works well.
         ```bash
         # Install it globally if you haven't already
         npm install -g serve
@@ -45,10 +44,8 @@ Here is the correct way to run this application:
         serve .
         ```
         Then open the URL it provides (usually `http://localhost:3000`).
-    *   **Using a VS Code Extension:**
-        Extensions like [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) are perfect for this. Simply install it, right-click on `index.html`, and choose "Open with Live Server".
 
-3.  **API Key**: This application is designed to run in an environment where the `process.env.API_KEY` is provided. When running locally with a simple server, the API key will be `undefined`, and API calls will fail. You must temporarily modify the code in `services/geminiService.ts` to hardcode your key for local testing:
+3.  **API Key**: This application is designed to run in an environment where the `process.env.API_KEY` is provided. When running locally, the API key will be `undefined`, and API calls will fail. You must temporarily modify the code in `services/geminiService.ts` to hardcode your key for local testing:
 
     ```typescript
     // In services/geminiService.ts (FOR LOCAL TESTING ONLY)
@@ -96,6 +93,9 @@ Here is the correct way to run this application:
 
 *   **Q: Why do I get an error when I open `index.html` directly?**
     *   **A:** Modern JavaScript (ES Modules) has security rules that prevent it from running from `file:///` URLs. You **must** serve the files using a simple local web server as described in the "How to Run" section.
+
+*   **Q: Why am I getting a `MIME type` error?**
+    *   **A:** This happens when your local web server doesn't know that `.tsx` files are JavaScript. Use the included `server.py` script (`python server.py`) which is correctly configured to solve this.
 
 *   **Q: Why can't the AI access a website in Live Conversation or Chat?**
     *   **A:** Web security policies (CORS) prevent a browser from directly accessing content on other websites. This is a limitation of web technology, not the AI. For a robust solution, this would require a server-side proxy.
