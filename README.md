@@ -20,46 +20,66 @@ This AI Studio comes packed with a suite of powerful features:
 
 ## 🛠️ How to Run
 
-This application is designed to be **run directly in a web browser without any build steps** (like Vite, Webpack, or `npm`).
+This application is designed to be **run directly in a web browser without any build steps** (like Vite, Webpack, or `npm`). The most important step is to use a simple local web server.
 
-The `MIME type` and `Failed to resolve import` errors are strong indicators that you are trying to run this project with an incorrect server setup.
+### 1. Start a Local Web Server (Required)
 
-Here is the correct way to run this application:
+You cannot open `index.html` directly from your file system (`file:///...`) due to browser security policies. You must use a local server.
 
-1.  **Ensure all files are in the same directory**: Make sure `index.html`, `server.py`, and all `.ts`/`.tsx` files are in the correct folder structure.
-2.  **Use the provided Python web server**: You cannot open `index.html` directly from your file system (`file:///...`). You need a local web server that can correctly identify TypeScript files (`.ts`/`.tsx`) as JavaScript.
-    *   **The Correct Way (with Python):**
-        This project includes a `server.py` file configured to work correctly.
-        ```bash
-        # In your project directory, run this command:
-        python server.py
-        ```
-        Then open `http://localhost:8000` in your browser.
-    *   **Alternative (with Node.js):**
-        If you prefer Node.js, the `serve` package also works well.
-        ```bash
-        # Install it globally if you haven't already
-        npm install -g serve
-        # In your project directory, run:
-        serve .
-        ```
-        Then open the URL it provides (usually `http://localhost:3000`).
+*   **Recommended Method (Node.js):**
+    The easiest and most reliable way is using the `serve` package.
+    ```bash
+    # 1. Install serve globally if you haven't already
+    npm install -g serve
 
-3.  **API Key**: This application is designed to run in an environment where the `process.env.API_KEY` is provided. When running locally, the API key will be `undefined`, and API calls will fail. You must temporarily modify the code in `services/geminiService.ts` to hardcode your key for local testing:
+    # 2. Run the server from the project's root directory
+    serve .
+    ```
+    Then, open the local URL it provides (e.g., `http://localhost:3000`).
 
-    ```typescript
-    // In services/geminiService.ts (FOR LOCAL TESTING ONLY)
-    const getAi = (): GoogleGenAI => {
-        const API_KEY = 'YOUR_GEMINI_API_KEY'; // <--- Add your key here
-        if (!API_KEY) {
+*   **Alternative Method (Python):**
+    This project includes a `server.py` file configured to work correctly.
+    ```bash
+    # In your project directory, run this command:
+    python server.py
+    ```
+    Then open `http://localhost:8000` in your browser.
+    
+    > **Troubleshooting**: If you see a `SyntaxError: Non-UTF-8 code` error, it indicates a file encoding issue. We recommend using the Node.js `serve` method above to fix this.
+
+*   **Alternative Method (Deno):**
+    Deno's standard file server also works perfectly.
+    ```bash
+    deno run --allow-net --allow-read https://deno.land/std/http/file_server.ts .
+    ```
+
+### 2. Add Your API Key (For Local Testing Only)
+
+This application is designed to run in an environment where `process.env.API_KEY` is provided. For local testing, you must temporarily modify the code to include your key.
+
+In `services/geminiService.ts`, find the `getAi` function and add your key:
+
+```typescript
+// In services/geminiService.ts
+const getAi = (): GoogleGenAI => {
+    // ⚠️ FOR LOCAL TESTING ONLY - Add your key here
+    const API_KEY = 'YOUR_GEMINI_API_KEY'; 
+    
+    if (!API_KEY) {
+        // This check is for the production environment
+        if (!process.env.API_KEY) {
             console.error("API_KEY environment variable not set.");
             throw new Error("API key is missing.");
         }
-        // Always create a new instance to avoid issues with stale API keys.
-        return new GoogleGenAI({ apiKey: API_KEY });
-    };
-    ```
-    **⚠️ IMPORTANT:** Remember to remove your hardcoded key before sharing or deploying the code!
+        return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    }
+    
+    // Always create a new instance to avoid issues with stale API keys.
+    return new GoogleGenAI({ apiKey: API_KEY });
+};
+```
+**⚠️ IMPORTANT:** Remember to remove your hardcoded key before sharing or deploying the code!
+
 
 ## 📘 Feature Guide
 
@@ -95,7 +115,7 @@ Here is the correct way to run this application:
     *   **A:** Modern JavaScript (ES Modules) has security rules that prevent it from running from `file:///` URLs. You **must** serve the files using a simple local web server as described in the "How to Run" section.
 
 *   **Q: Why am I getting a `MIME type` error?**
-    *   **A:** This happens when your local web server doesn't know that `.tsx` files are JavaScript. Use the included `server.py` script (`python server.py`) which is correctly configured to solve this.
+    *   **A:** This happens when your local web server doesn't know that `.tsx` files are JavaScript. Use one of the recommended servers in the "How to Run" section, as they are correctly configured to solve this.
 
 *   **Q: Why can't the AI access a website in Live Conversation or Chat?**
     *   **A:** Web security policies (CORS) prevent a browser from directly accessing content on other websites. This is a limitation of web technology, not the AI. For a robust solution, this would require a server-side proxy.
