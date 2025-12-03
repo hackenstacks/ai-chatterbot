@@ -214,7 +214,8 @@ const Settings: React.FC = () => {
         setEditingPersona(null);
     };
 
-    const handleDeletePersona = async (personaId: string) => {
+    const handleDeletePersona = async (e: React.MouseEvent, personaId: string) => {
+        e.stopPropagation();
         if (!window.confirm("Are you sure you want to delete this character?")) return;
 
         const personaToDelete = personas.find(p => p.id === personaId);
@@ -229,7 +230,8 @@ const Settings: React.FC = () => {
         window.dispatchEvent(new CustomEvent('personasUpdated'));
     };
 
-    const handleSetActive = async (personaId: string) => {
+    const handleSetActive = async (e: React.MouseEvent, personaId: string) => {
+        e.stopPropagation();
         const updatedPersonas = personas.map(p => ({
             ...p,
             isActive: p.id === personaId,
@@ -336,7 +338,8 @@ const Settings: React.FC = () => {
     };
 
 
-    const handleSharePersona = async (persona: Persona) => {
+    const handleSharePersona = async (e: React.MouseEvent, persona: Persona) => {
+        e.stopPropagation();
         try {
             const signature = await cryptoService.sign(persona);
             const publicKey = await cryptoService.getPublicSigningKey();
@@ -380,9 +383,9 @@ const Settings: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                    {!p.isActive && <button onClick={() => handleSetActive(p.id)} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-2 rounded">Apply</button>}
-                                    <button onClick={() => handleSharePersona(p)} className="p-2 hover:bg-slate-600 rounded" title="Share Persona"><ShareIcon/></button>
-                                    <button onClick={() => handleDeletePersona(p.id)} className="p-2 hover:bg-red-600 rounded" title="Delete Persona"><TrashIcon/></button>
+                                    {!p.isActive && <button onClick={(e) => handleSetActive(e, p.id)} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-2 rounded">Apply</button>}
+                                    <button onClick={(e) => handleSharePersona(e, p)} className="p-2 hover:bg-slate-600 rounded" title="Share Persona"><ShareIcon/></button>
+                                    <button onClick={(e) => handleDeletePersona(e, p.id)} className="p-2 hover:bg-red-600 rounded" title="Delete Persona"><TrashIcon/></button>
                                 </div>
                             </div>
                         )) : <p className="text-slate-500 text-center mt-8">No characters created yet.</p>}

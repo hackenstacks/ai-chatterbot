@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import type { Feature, FeatureId } from './types.ts';
 import {
@@ -84,6 +85,14 @@ const App: React.FC = () => {
   if (!isAuthenticated) {
     return <Auth onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
+  
+  const ActiveFeatureComponent = features.find(f => f.id === activeFeature)?.component;
+  const activeFeatureProps: any = {};
+  // Pass shared document state to all features that might need it.
+  if (['live', 'file-library', 'image-analysis', 'image-gen', 'video-analysis', 'audio-transcription', 'grounding', 'reasoning', 'chat', 'settings'].includes(activeFeature)) {
+      activeFeatureProps.documents = documents;
+      activeFeatureProps.setDocuments = setDocuments;
+  }
 
   return (
     <div className="flex h-screen bg-slate-900 text-slate-100 font-sans">
@@ -123,22 +132,7 @@ const App: React.FC = () => {
       </nav>
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        {features.map(feature => {
-            const props: any = { key: feature.id };
-            const isActive = activeFeature === feature.id;
-            
-            // Pass shared document state to all features that might need to read or write to the library.
-            if (['live', 'file-library', 'image-analysis', 'image-gen', 'video-analysis', 'audio-transcription', 'grounding', 'reasoning', 'chat', 'settings'].includes(feature.id)) {
-                props.documents = documents;
-                props.setDocuments = setDocuments;
-            }
-            
-            return (
-              <div key={feature.id} className="w-full h-full" style={{ display: isActive ? 'block' : 'none' }}>
-                {React.createElement(feature.component, props)}
-              </div>
-            );
-        })}
+        {ActiveFeatureComponent && React.createElement(ActiveFeatureComponent, activeFeatureProps)}
       </main>
 
       <HelpModal isOpen={isHelpModalOpen} onClose={() => setIsHelpModalOpen(false)} />

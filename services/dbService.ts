@@ -3,7 +3,7 @@ import { ChatMessage, Persona } from '../types.ts';
 import { cryptoService } from './cryptoService.ts';
 
 const DB_NAME = 'GeminiAIStudioDB';
-const DB_VERSION = 3; // Incremented version for new store
+const DB_VERSION = 4; // Incremented version for new store
 const FILE_STORE = 'files';
 const CHAT_STORE = 'chatHistory';
 const SETTINGS_STORE = 'app_settings';
