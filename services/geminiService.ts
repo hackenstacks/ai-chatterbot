@@ -78,9 +78,12 @@ export const GeminiService = {
     },
 
     getPersonaSuggestion: async (field: keyof Persona, currentPersona: Partial<Persona>): Promise<string> => {
-        const personaContext = Object.entries(currentPersona)
+        // FIX: Exclude avatarUrl (base64) and internal IDs to prevent exceeding token limits.
+        const { avatarUrl, id, isActive, voice, ...relevantContext } = currentPersona;
+
+        const personaContext = Object.entries(relevantContext)
             .filter(([, value]) => value)
-            .map(([key, value]) => `${key}: ${value}`)
+            .map(([key, value]) => `${key}: ${String(value).substring(0, 5000)}`) // Safety truncate
             .join(', ');
         
         const prompt = `Based on the following partial persona, suggest a creative value for "${field}".\n\nContext: ${personaContext || 'No details yet.'}`;
