@@ -1,3 +1,4 @@
+
 import type { Blob } from '@google/genai';
 // Base64 encoding function
 export function encode(bytes: Uint8Array): string {
@@ -76,10 +77,10 @@ export const formatBytes = (bytes: number, decimals = 2) => {
 export const readFileContent = async (file: File): Promise<string> => {
     if (file.type === 'application/pdf') {
         return Promise.reject(new Error('PDF reading has been removed.'));
-    } else if (file.type.startsWith('text/')) {
+    } else if (file.type.startsWith('text/') || file.type === 'application/json') {
         return file.text();
     } else {
-        return Promise.reject(new Error('Unsupported file type for reading content. Only TXT files are supported.'));
+        return Promise.reject(new Error('Unsupported file type for reading content. Only TXT and JSON files are supported.'));
     }
 };
 

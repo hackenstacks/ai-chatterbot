@@ -1,11 +1,14 @@
+
 // FIX: Import React to resolve the "Cannot find namespace 'React'" error.
 import React, { ReactNode } from 'react';
 
 export interface ChatMessage {
-  role: 'user' | 'model';
+  id?: string; // Unique ID for editing/deletion
+  role: 'user' | 'model' | 'system'; // Added system for RAG/Narrator
   parts: { text: string }[];
   sources?: GroundingSource[];
   imageUrl?: string;
+  timestamp?: number;
 }
 
 export interface Persona {
@@ -20,6 +23,15 @@ export interface Persona {
   avatarUrl: string; // Can be a web URL or a data URL
   scenario: string;
   voice?: string; // Voice URI for speech synthesis
+}
+
+export interface Memory {
+  id: string;
+  content: string;
+  embedding: number[];
+  timestamp: number;
+  tags: string[]; // e.g., 'episodic', 'semantic', 'user-defined'
+  associatedPersonaId?: string; // null if global
 }
 
 export interface GroundingSource {

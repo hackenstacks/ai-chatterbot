@@ -1,12 +1,13 @@
 
-import { ChatMessage, Persona } from '../types.ts';
+import { ChatMessage, Persona, Memory } from '../types.ts';
 import { cryptoService } from './cryptoService.ts';
 
 const DB_NAME = 'GeminiAIStudioDB';
-const DB_VERSION = 4; // Incremented version for new store
+const DB_VERSION = 6; // Increment for Memory Store
 const FILE_STORE = 'files';
 const CHAT_STORE = 'chatHistory';
 const SETTINGS_STORE = 'app_settings';
+const MEMORY_STORE = 'memories';
 
 let dbInstance: IDBDatabase | null = null;
 
@@ -47,6 +48,9 @@ const openDB = (): Promise<IDBDatabase> => {
       }
        if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
         db.createObjectStore(SETTINGS_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(MEMORY_STORE)) {
+        db.createObjectStore(MEMORY_STORE, { keyPath: 'id' });
       }
     };
   });
@@ -276,33 +280,71 @@ export const dbService = {
       });
   },
 
+  async addMemory(memory: Memory): Promise<void> {
+      const encryptedPayload = await cryptoService.encrypt(memory);
+      const db = await openDB();
+      const transaction = db.transaction(MEMORY_STORE, 'readwrite');
+      const store = transaction.objectStore(MEMORY_STORE);
+      store.put({ id: memory.id, encryptedPayload });
+      return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
+  async getMemories(): Promise<Memory[]> {
+      const db = await openDB();
+      const transaction = db.transaction(MEMORY_STORE, 'readonly');
+      const store = transaction.objectStore(MEMORY_STORE);
+      const request = store.getAll();
+      return new Promise((resolve, reject) => {
+          request.onsuccess = async () => {
+              const encryptedRecords = request.result as { id: string, encryptedPayload: string }[];
+              const decryptedMemories: Memory[] = [];
+              for (const record of encryptedRecords) {
+                  try {
+                      const decrypted = await cryptoService.decrypt<Memory>(record.encryptedPayload);
+                      decryptedMemories.push(decrypted);
+                  } catch (error) {
+                      console.error("Could not decrypt memory:", error);
+                  }
+              }
+              resolve(decryptedMemories);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
   async clearAllData(): Promise<void> {
       const db = await openDB();
-      const transaction = db.transaction([FILE_STORE, CHAT_STORE, SETTINGS_STORE], 'readwrite');
+      const transaction = db.transaction([FILE_STORE, CHAT_STORE, SETTINGS_STORE, MEMORY_STORE], 'readwrite');
       const fileStore = transaction.objectStore(FILE_STORE);
       const chatStore = transaction.objectStore(CHAT_STORE);
       const settingsStore = transaction.objectStore(SETTINGS_STORE);
+      const memoryStore = transaction.objectStore(MEMORY_STORE);
 
       await Promise.all([
           new Promise<void>((res, rej) => { const r = fileStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
           new Promise<void>((res, rej) => { const r = chatStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
           new Promise<void>((res, rej) => { const r = settingsStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
+          new Promise<void>((res, rej) => { const r = memoryStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
       ]);
   },
 
   async getAllDataForBackup(): Promise<object> {
-      const [files, chatHistory, personas, voicePreference, accessibleFiles] = await Promise.all([
+      const [files, chatHistory, personas, voicePreference, accessibleFiles, memories] = await Promise.all([
           this.getDocuments(),
           this.getChatHistory(),
           this.getPersonas(),
           this.getVoicePreference(),
           this.getSetting('accessibleFiles'),
+          this.getMemories(),
       ]);
-      return { files, chatHistory, personas, voicePreference, accessibleFiles };
+      return { files, chatHistory, personas, voicePreference, accessibleFiles, memories };
   },
 
   async importAndOverwriteAllData(data: any): Promise<void> {
-      const { files, chatHistory, personas, voicePreference, accessibleFiles } = data;
+      const { files, chatHistory, personas, voicePreference, accessibleFiles, memories } = data;
       
       await this.clearAllData();
 
@@ -312,5 +354,10 @@ export const dbService = {
       if (personas && Array.isArray(personas) && personas.length > 0) await this.savePersonas(personas);
       if (voicePreference) await this.saveVoicePreference(voicePreference);
       if (accessibleFiles) await this.saveSetting('accessibleFiles', accessibleFiles);
+      if (memories && Array.isArray(memories) && memories.length > 0) {
+          for (const m of memories) {
+              await this.addMemory(m);
+          }
+      }
   }
 };

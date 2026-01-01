@@ -9,48 +9,39 @@ import PersonaConfigModal from './common/PersonaConfigModal.tsx';
 import PasswordPromptModal from '../components/PasswordPromptModal.tsx';
 import { LIVE_VOICES } from '../constants.ts';
 
-// Helper to find and parse character JSON from a PNG's tEXt chunk
 const findJsonInPng = (arrayBuffer: ArrayBuffer): string | null => {
     const dataView = new DataView(arrayBuffer);
-    // Check for PNG signature
-    if (dataView.getUint32(0) !== 0x89504E47 || dataView.getUint32(4) !== 0x0D0A1A0A) {
-        console.error("Not a valid PNG file.");
-        return null;
-    }
+    if (dataView.getUint32(0) !== 0x89504E47) return null;
 
     let offset = 8;
+    const decoderLatin1 = new TextDecoder('latin1');
     while (offset < dataView.byteLength) {
         const length = dataView.getUint32(offset);
         const type = new TextDecoder().decode(new Uint8Array(arrayBuffer, offset + 4, 4));
-
         if (type === 'tEXt') {
             const chunkData = new Uint8Array(arrayBuffer, offset + 8, length);
-            const textDecoder = new TextDecoder('latin1'); // Use latin1 to handle null bytes correctly
-            const text = textDecoder.decode(chunkData);
-            
-            // TavernAI cards store data in a 'chara' keyword tEXt chunk
-            if (text.startsWith('chara\0')) {
-                const base64Data = text.substring(6); // 6 is length of "chara" + null terminator
-                try {
-                    // The data is base64 encoded JSON
-                    return atob(base64Data);
-                } catch (e) {
-                    console.error("Failed to decode base64 data from tEXt chunk", e);
-                }
+            const text = decoderLatin1.decode(chunkData);
+            const splitIndex = text.indexOf('\0');
+            if (splitIndex > -1) {
+                const keyword = text.substring(0, splitIndex);
+                if (keyword === 'chara') return atob(text.substring(splitIndex + 1));
             }
         }
-
-        if (type === 'IEND') {
-            break; // End of chunks
-        }
-        
-        // Move to the next chunk: 4 bytes for length, 4 for type, data length, 4 for CRC
+        if (type === 'IEND') break;
         offset += 12 + length; 
     }
-
     return null;
 };
 
+const processLorebook = (characterBook: any): string => {
+    if (!characterBook || !characterBook.entries) return '';
+    let loreText = '\n\n[World Info / Lorebook]:\n';
+    characterBook.entries.forEach((entry: any) => {
+        if (entry.enabled === false) return;
+        loreText += `\n--- ${entry.name || 'Entry'} ---\nKeywords: ${entry.keys?.join(', ') || ''}\n${entry.content || ''}\n`;
+    });
+    return loreText;
+};
 
 const Settings: React.FC = () => {
     const [isExporting, setIsExporting] = useState(false);
@@ -64,60 +55,26 @@ const Settings: React.FC = () => {
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [passwordModalConfig, setPasswordModalConfig] = useState<any>({});
 
-
     useEffect(() => {
-        const loadSettings = async () => {
-            try {
-                const [savedPersonas, savedVoice] = await Promise.all([
-                    dbService.getPersonas(),
-                    dbService.getVoicePreference()
-                ]);
-                setPersonas(savedPersonas);
-                if (savedVoice) {
-                    setSelectedVoice(savedVoice);
-                }
-            } catch (e: any) {
-                setError(`Failed to load settings: ${e.message}`);
-            }
-        };
-        loadSettings();
+        dbService.getPersonas().then(setPersonas);
+        dbService.getVoicePreference().then(v => v && setSelectedVoice(v));
     }, []);
 
     const handleExport = () => {
         setPasswordModalConfig({
             title: "Set Backup Password",
-            description: "This password will be required to decrypt and import your backup file. Do not lose it.",
-            buttonText: "Encrypt & Export",
-            onSubmit: async (password: string) => {
-                if (!password) {
-                    setError("Password cannot be empty.");
-                    return;
-                }
-                setIsExporting(true);
-                setError(null);
-                setSuccess(null);
-                try {
-                    const dataToBackup = await dbService.getAllDataForBackup();
-                    const encryptedBackup = await cryptoService.encryptBackup(dataToBackup, password);
-                    
-                    const blob = new Blob([encryptedBackup], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `gemini-ai-studio-backup-${new Date().toISOString().split('T')[0]}.json`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-
-                    setSuccess('Backup encrypted and downloaded!');
-                } catch (e: any) {
-                    console.error("Export failed:", e);
-                    setError(`Export failed: ${e.message}`);
-                } finally {
-                    setIsExporting(false);
-                    setIsPasswordModalOpen(false);
-                }
+            description: "Required to decrypt your backup file.",
+            buttonText: "Export",
+            onSubmit: async (pw: string) => {
+                const data = await dbService.getAllDataForBackup();
+                const encrypted = await cryptoService.encryptBackup(data, pw);
+                const blob = new Blob([encrypted], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `gemini-backup-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                setIsPasswordModalOpen(false);
             }
         });
         setIsPasswordModalOpen(true);
@@ -126,339 +83,169 @@ const Settings: React.FC = () => {
     const handleImportRequest = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = (e) => {
-            const encryptedContent = e.target?.result as string;
-
+            const content = e.target?.result as string;
             setPasswordModalConfig({
-                title: "Enter Backup Password",
-                description: "Enter the password used to encrypt this backup file.",
-                buttonText: "Decrypt & Import",
-                onSubmit: async (password: string) => {
-                    if (!password) {
-                        setError("Password cannot be empty.");
-                        return;
-                    }
-                    if (!window.confirm("Importing data will overwrite all current files and chat settings. This cannot be undone. Are you sure you want to continue?")) {
-                       setIsPasswordModalOpen(false);
-                       return;
-                    }
-
-                    setIsImporting(true);
-                    setError(null);
-                    setSuccess(null);
+                title: "Enter Password",
+                description: "Password for the backup file.",
+                buttonText: "Import",
+                onSubmit: async (pw: string) => {
                     try {
-                        const decryptedData = await cryptoService.decryptBackup(encryptedContent, password);
-                        await dbService.importAndOverwriteAllData(decryptedData);
-                        setSuccess('Import successful! The application will now reload.');
-                        setTimeout(() => window.location.reload(), 2000);
-                    } catch (err: any) {
-                        console.error("Import failed:", err);
-                        setError("Import failed. Please check the backup file and password and try again.");
-                    } finally {
-                        setIsImporting(false);
-                        setIsPasswordModalOpen(false);
-                    }
+                        const data = await cryptoService.decryptBackup(content, pw);
+                        await dbService.importAndOverwriteAllData(data);
+                        window.location.reload();
+                    } catch (err) { setError("Import failed: Incorrect password."); }
+                    setIsPasswordModalOpen(false);
                 }
             });
             setIsPasswordModalOpen(true);
         };
         reader.readAsText(file);
-        event.target.value = ''; // Reset file input
     };
 
-    const handleVoiceChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newVoice = e.target.value;
-        setSelectedVoice(newVoice);
-        setError(null);
-        try {
-            await dbService.saveVoicePreference(newVoice);
-        } catch (e: any) {
-            setError(`Failed to save voice preference: ${e.message}`);
-        }
-    };
-
-    const handleAddNewPersona = () => {
-        setEditingPersona({
-            id: crypto.randomUUID(),
-            role: 'New Character',
-            personalityTraits: '',
-            physicalTraits: '',
-            lore: '',
-            characterDescription: '',
-            scenario: '',
-            systemPrompt: '',
-            avatarUrl: '',
-        });
-        setIsPersonaModalOpen(true);
-    };
-
-    const handleEditPersona = (persona: Persona) => {
-        setEditingPersona(persona);
-        setIsPersonaModalOpen(true);
-    };
-
-    const handleSavePersona = async (personaToSave: Persona) => {
-        const isNew = !personas.some(p => p.id === personaToSave.id);
-        const updatedPersonas = isNew ? [...personas, personaToSave] : personas.map(p => p.id === personaToSave.id ? personaToSave : p);
-        
-        if (updatedPersonas.length === 1) {
-            updatedPersonas[0].isActive = true;
-        }
-
-        setPersonas(updatedPersonas);
-        await dbService.savePersonas(updatedPersonas);
+    const handleSavePersona = async (p: Persona) => {
+        const updated = personas.some(existing => existing.id === p.id) 
+            ? personas.map(e => e.id === p.id ? p : e) 
+            : [...personas, p];
+        if (updated.length === 1) updated[0].isActive = true;
+        setPersonas(updated);
+        await dbService.savePersonas(updated);
         window.dispatchEvent(new CustomEvent('personasUpdated'));
-        setIsPersonaModalOpen(false);
-        setEditingPersona(null);
     };
 
-    const handleDeletePersona = async (e: React.MouseEvent, personaId: string) => {
+    const handleDeletePersona = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
-        if (!window.confirm("Are you sure you want to delete this character?")) return;
-
-        const personaToDelete = personas.find(p => p.id === personaId);
-        const updatedPersonas = personas.filter(p => p.id !== personaId);
-
-        if (personaToDelete?.isActive && updatedPersonas.length > 0) {
-            updatedPersonas[0].isActive = true;
-        }
-
-        setPersonas(updatedPersonas);
-        await dbService.savePersonas(updatedPersonas);
+        if (!window.confirm("Delete this character?")) return;
+        const updated = personas.filter(p => p.id !== id);
+        if (personas.find(p => p.id === id)?.isActive && updated.length > 0) updated[0].isActive = true;
+        setPersonas(updated);
+        await dbService.savePersonas(updated);
         window.dispatchEvent(new CustomEvent('personasUpdated'));
     };
 
-    const handleSetActive = async (e: React.MouseEvent, personaId: string) => {
+    const handleSetActive = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
-        const updatedPersonas = personas.map(p => ({
-            ...p,
-            isActive: p.id === personaId,
-        }));
-        setPersonas(updatedPersonas);
-        await dbService.savePersonas(updatedPersonas);
+        const updated = personas.map(p => ({ ...p, isActive: p.id === id }));
+        setPersonas(updated);
+        await dbService.savePersonas(updated);
         window.dispatchEvent(new CustomEvent('personasUpdated'));
-    };
-    
-    const handleExportPersonas = () => {
-        const dataString = JSON.stringify(personas, null, 2);
-        const blob = new Blob([dataString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `gemini-personas-backup.json`;
-        a.click();
-        URL.revokeObjectURL(url);
     };
 
     const handleImportCharacter = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-
-        setError(null);
-        setSuccess(null);
-
+        setError(null); setSuccess(null);
         try {
-            let newPersona: Partial<Persona> | null = null;
-            let fileContent: string | null = null;
-
-            if (file.name.toLowerCase().endsWith('.json')) {
-                fileContent = await file.text();
-            } else if (file.name.toLowerCase().endsWith('.png')) {
-                const buffer = await file.arrayBuffer();
-                fileContent = findJsonInPng(buffer);
-                if (!fileContent) {
-                    throw new Error("Could not find character data in PNG file. The file may not be a valid character card.");
-                }
-            } else {
-                throw new Error("Unsupported file type. Please use .json or .png character cards.");
+            let fileContent = '';
+            if (file.name.endsWith('.json')) fileContent = await file.text();
+            else if (file.name.endsWith('.png')) {
+                const json = findJsonInPng(await file.arrayBuffer());
+                if (!json) throw new Error("No character data in PNG.");
+                fileContent = json;
             }
+            const data = JSON.parse(fileContent);
+            if (!data) throw new Error("Empty character file.");
 
-            if (fileContent) {
-                const data = JSON.parse(fileContent);
-                // Check for TavernAI format
-                if (data.name || data.char_name) {
-                    newPersona = {
-                        role: data.name || data.char_name || '',
-                        characterDescription: data.first_mes || data.char_greeting || '',
-                        personalityTraits: data.personality || data.char_persona || '',
-                        scenario: data.scenario || '',
-                        lore: data.description || '',
-                    };
-                } else if (Array.isArray(data)) {
-                    // It's a bulk export from this app
-                    const importedPersonas = data as Persona[];
-                    const combined = [...personas];
-                    let newCount = 0;
-                    importedPersonas.forEach(p => {
-                        if (p.id && p.role && !combined.some(existing => existing.id === p.id)) {
-                             combined.push({ ...p, isActive: false });
-                             newCount++;
-                        }
-                    });
-                     setPersonas(combined);
-                     await dbService.savePersonas(combined);
-                     window.dispatchEvent(new CustomEvent('personasUpdated'));
-                     setSuccess(`${newCount} new characters imported successfully!`);
-                     return; // Early exit for bulk import
-                }
-                else {
-                    newPersona = data; // Assume it's our format for a single persona
-                }
-            }
-
-
-            if (newPersona) {
-                const completePersona: Persona = {
-                    id: crypto.randomUUID(),
-                    isActive: false,
-                    role: newPersona.role || 'Imported Character',
-                    personalityTraits: newPersona.personalityTraits || '',
-                    physicalTraits: newPersona.physicalTraits || '',
-                    lore: newPersona.lore || '',
-                    characterDescription: newPersona.characterDescription || '',
-                    scenario: newPersona.scenario || '',
-                    systemPrompt: newPersona.systemPrompt || '',
-                    avatarUrl: newPersona.avatarUrl || '',
+            let imported: Partial<Persona> = {};
+            if (data.spec === 'chara_card_v2' && data.data) {
+                const d = data.data;
+                imported = {
+                    role: d.name,
+                    characterDescription: d.first_mes,
+                    personalityTraits: d.personality,
+                    scenario: d.scenario,
+                    lore: (d.description || '') + processLorebook(d.character_book),
+                    systemPrompt: d.mes_example
                 };
-
-                if (!personas.some(p => p.role === completePersona.role)) {
-                    await handleSavePersona(completePersona);
-                    setSuccess(`Character "${completePersona.role}" imported successfully!`);
-                } else {
-                    setError(`A character named "${completePersona.role}" already exists.`);
-                }
+            } else if (data.name || data.char_name) {
+                imported = {
+                    role: data.name || data.char_name,
+                    characterDescription: data.first_mes || data.char_greeting,
+                    personalityTraits: data.personality || data.char_persona,
+                    scenario: data.scenario || data.world_scenario,
+                    lore: data.description || '',
+                    systemPrompt: data.mes_example || data.example_dialogue
+                };
+            } else {
+                throw new Error("Unknown character card format.");
             }
-        } catch (err: any) {
-            setError(`Import failed: ${err.message}`);
-        } finally {
-            event.target.value = '';
-        }
-    };
 
+            if (!imported.role) throw new Error("Character card missing name.");
 
-    const handleSharePersona = async (e: React.MouseEvent, persona: Persona) => {
-        e.stopPropagation();
-        try {
-            const signature = await cryptoService.sign(persona);
-            const publicKey = await cryptoService.getPublicSigningKey();
-            
-            const shareablePayload = {
-                persona,
-                signature, // base64
-                publicKey, // JWK
+            const complete: Persona = {
+                id: crypto.randomUUID(),
+                isActive: false,
+                role: imported.role,
+                personalityTraits: imported.personalityTraits || '',
+                physicalTraits: imported.physicalTraits || '',
+                lore: imported.lore || '',
+                characterDescription: imported.characterDescription || '',
+                scenario: imported.scenario || '',
+                systemPrompt: imported.systemPrompt || '',
+                avatarUrl: '',
+                voice: ''
             };
-    
-            const dataString = JSON.stringify(shareablePayload, null, 2);
-            const blob = new Blob([dataString], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const safeRoleName = persona.role.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            a.href = url;
-            a.download = `persona-${safeRoleName}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        } catch (e: any) {
-            console.error("Failed to share persona:", e);
-            setError(`Failed to create shareable persona file: ${e.message}`);
-        }
+            await handleSavePersona(complete);
+            setSuccess(`Imported "${complete.role}"`);
+        } catch (err: any) { setError(err.message); }
+        event.target.value = '';
     };
 
     return (
-        <FeatureLayout title="Settings" description="Manage your application data, chatbot personas, and voice preferences.">
+        <FeatureLayout title="Settings" description="Manage characters and data.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-slate-800/50 rounded-lg p-6 flex flex-col h-96">
-                    <h2 className="text-xl font-bold mb-3 text-white">Character Management</h2>
+                <div className="bg-slate-800/50 rounded-lg p-6 flex flex-col h-[500px]">
+                    <h2 className="text-xl font-bold mb-3 text-white">Characters</h2>
                     <div className="flex-grow overflow-y-auto pr-2 space-y-2">
-                        {personas.length > 0 ? personas.map(p => (
-                            <div key={p.id} onClick={() => handleEditPersona(p)} className={`p-3 rounded-lg flex items-center justify-between cursor-pointer group ${p.isActive ? 'bg-blue-900/50 ring-1 ring-blue-500' : 'bg-slate-700/50 hover:bg-slate-700'}`}>
-                                <div className="flex items-center space-x-3">
-                                    {p.avatarUrl ? <img src={p.avatarUrl} alt={p.role} className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center font-bold">{p.role.charAt(0)}</div>}
-                                    <div>
-                                        <p className="font-semibold">{p.role}</p>
-                                        <p className="text-xs text-slate-400 truncate max-w-xs">{p.personalityTraits}</p>
+                        {personas.map(p => (
+                            <div key={p.id} onClick={() => { setEditingPersona(p); setIsPersonaModalOpen(true); }} className={`p-3 rounded-lg flex items-center justify-between cursor-pointer group ${p.isActive ? 'bg-blue-900/50 ring-1 ring-blue-500' : 'bg-slate-700/50 hover:bg-slate-700'}`}>
+                                <div className="flex items-center space-x-3 overflow-hidden">
+                                    <div className="w-10 h-10 rounded-full bg-slate-600 flex-shrink-0 flex items-center justify-center font-bold">
+                                        {p.avatarUrl ? <img src={p.avatarUrl} className="w-full h-full rounded-full object-cover" /> : p.role.charAt(0)}
+                                    </div>
+                                    <div className="truncate">
+                                        <p className="font-semibold truncate">{p.role}</p>
+                                        <p className="text-xs text-slate-400 truncate">{p.personalityTraits || 'No traits set'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                    {!p.isActive && <button onClick={(e) => handleSetActive(e, p.id)} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-2 rounded">Apply</button>}
-                                    <button onClick={(e) => handleSharePersona(e, p)} className="p-2 hover:bg-slate-600 rounded" title="Share Persona"><ShareIcon/></button>
-                                    <button onClick={(e) => handleDeletePersona(e, p.id)} className="p-2 hover:bg-red-600 rounded" title="Delete Persona"><TrashIcon/></button>
+                                    {!p.isActive && <button onClick={(e) => handleSetActive(e, p.id)} className="text-xs bg-green-600 text-white px-2 py-1 rounded">Set</button>}
+                                    <button onClick={(e) => handleDeletePersona(e, p.id)} className="p-2 hover:bg-red-600 rounded"><TrashIcon/></button>
                                 </div>
                             </div>
-                        )) : <p className="text-slate-500 text-center mt-8">No characters created yet.</p>}
+                        ))}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                        <button onClick={handleAddNewPersona} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Create New</button>
-                        <button onClick={handleExportPersonas} disabled={personas.length === 0} className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-lg text-sm disabled:opacity-50">Export All</button>
-                        <input type="file" id="import-character" accept=".json,.png" onChange={handleImportCharacter} className="hidden" />
-                        <label htmlFor="import-character" className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-lg text-sm cursor-pointer text-center">Import</label>
+                        <button onClick={() => { setEditingPersona({ id: crypto.randomUUID(), role: 'New Hero', personalityTraits: '', physicalTraits: '', lore: '', characterDescription: '', scenario: '', systemPrompt: '', avatarUrl: '', voice: '' }); setIsPersonaModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg text-sm">Create</button>
+                        <input type="file" id="import-char" className="hidden" accept=".json,.png" onChange={handleImportCharacter} />
+                        <label htmlFor="import-char" className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-lg text-sm text-center cursor-pointer">Import Card</label>
                     </div>
+                    {success && <p className="text-green-400 text-xs mt-2">{success}</p>}
+                    {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
                 </div>
-
-                <div className="bg-slate-800/50 rounded-lg p-6 flex flex-col h-96">
-                    <h2 className="text-xl font-bold mb-3 text-white">Live Conversation Voice</h2>
-                    <p className="text-slate-400 mb-6">Choose the voice Gemini will use during live conversations.</p>
-                    <select value={selectedVoice} onChange={handleVoiceChange} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                        {LIVE_VOICES.map(voice => <option key={voice} value={voice}>{voice}</option>)}
-                    </select>
-                </div>
-                
-                <div className="bg-slate-800/50 rounded-lg p-6 flex flex-col h-96">
-                    <h2 className="text-xl font-bold mb-3 text-white">Data Backup & Restore</h2>
-                    <p className="text-slate-400 mb-6">
-                        Export all your application data into a single, password-protected file.
-                        You can import this file later to restore your application state.
-                    </p>
-                    <div className="flex-grow" />
-                    {error && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4">{error}</p>}
-                    {success && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4">{success}</p>}
-
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <button
-                            onClick={handleExport}
-                            disabled={isExporting || isImporting}
-                            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-                        >
-                            <DownloadIcon />
-                            {isExporting ? 'Exporting...' : 'Export All Data'}
-                        </button>
-                        
-                        <input
-                            type="file"
-                            id="import-file"
-                            accept=".json"
-                            onChange={handleImportRequest}
-                            className="hidden"
-                            disabled={isImporting || isExporting}
-                        />
-                        <label
-                            htmlFor="import-file"
-                            className={`flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${isImporting || isImporting ? 'cursor-not-allowed bg-slate-600' : 'cursor-pointer'}`}
-                        >
-                            <UploadIcon />
-                            {isImporting ? 'Importing...' : 'Import All Data'}
-                        </label>
+                <div className="bg-slate-800/50 rounded-lg p-6 flex flex-col h-[500px]">
+                    <h2 className="text-xl font-bold mb-3 text-white">Preferences & Backup</h2>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm text-slate-400 mb-1">Live Voice</label>
+                            <select value={selectedVoice} onChange={(e) => { setSelectedVoice(e.target.value); dbService.saveVoicePreference(e.target.value); }} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3">
+                                {LIVE_VOICES.map(v => <option key={v} value={v}>{v}</option>)}
+                            </select>
+                        </div>
+                        <div className="pt-4 border-t border-slate-700 flex gap-4">
+                            <button onClick={handleExport} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"><DownloadIcon/> Export All</button>
+                            <input type="file" id="import-all" className="hidden" accept=".json" onChange={handleImportRequest} />
+                            <label htmlFor="import-all" className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 cursor-pointer"><UploadIcon/> Import All</label>
+                        </div>
                     </div>
                 </div>
             </div>
             {isPersonaModalOpen && editingPersona && (
-                 <PersonaConfigModal
-                    isOpen={isPersonaModalOpen}
-                    onClose={() => setIsPersonaModalOpen(false)}
-                    initialPersona={editingPersona}
-                    onSave={handleSavePersona}
-                 />
+                <PersonaConfigModal isOpen={isPersonaModalOpen} onClose={() => setIsPersonaModalOpen(false)} initialPersona={editingPersona} onSave={handleSavePersona} />
             )}
-            <PasswordPromptModal
-                isOpen={isPasswordModalOpen}
-                onClose={() => setIsPasswordModalOpen(false)}
-                {...passwordModalConfig}
-            />
+            <PasswordPromptModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} {...passwordModalConfig} />
         </FeatureLayout>
     );
 };
-
 export default Settings;
