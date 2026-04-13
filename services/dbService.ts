@@ -1,15 +1,10 @@
 
-import { ChatMessage, Persona, Memory } from '../types.ts';
+import Dexie, { Table } from 'dexie';
+import { ChatMessage, Persona, Memory, ApiConfig } from '../types.ts';
 import { cryptoService } from './cryptoService.ts';
 
 const DB_NAME = 'GeminiAIStudioDB';
-const DB_VERSION = 6; // Increment for Memory Store
-const FILE_STORE = 'files';
-const CHAT_STORE = 'chatHistory';
-const SETTINGS_STORE = 'app_settings';
-const MEMORY_STORE = 'memories';
-
-let dbInstance: IDBDatabase | null = null;
+const DB_VERSION = 7; // Increment for Dexie migration
 
 export interface StoredFile {
     name: string;
@@ -20,41 +15,29 @@ export interface StoredFile {
     data: string; // base64 encoded
 }
 
+interface EncryptedRecord {
+    id: string;
+    encryptedPayload: string;
+}
 
-const openDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    if (dbInstance) {
-      return resolve(dbInstance);
+class AppDatabase extends Dexie {
+    files!: Table<EncryptedRecord, string>;
+    chatHistory!: Table<EncryptedRecord, string>;
+    settings!: Table<EncryptedRecord, string>;
+    memories!: Table<EncryptedRecord, string>;
+
+    constructor() {
+        super(DB_NAME);
+        this.version(DB_VERSION).stores({
+            files: 'id',
+            chatHistory: 'id',
+            settings: 'id',
+            memories: 'id'
+        });
     }
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+}
 
-    request.onerror = () => {
-      console.error("IndexedDB error:", request.error);
-      reject(request.error);
-    };
-
-    request.onsuccess = () => {
-      dbInstance = request.result;
-      resolve(dbInstance);
-    };
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(FILE_STORE)) {
-        db.createObjectStore(FILE_STORE, { keyPath: 'name' });
-      }
-      if (!db.objectStoreNames.contains(CHAT_STORE)) {
-        db.createObjectStore(CHAT_STORE, { keyPath: 'id' });
-      }
-       if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
-        db.createObjectStore(SETTINGS_STORE, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(MEMORY_STORE)) {
-        db.createObjectStore(MEMORY_STORE, { keyPath: 'id' });
-      }
-    };
-  });
-};
+const db = new AppDatabase();
 
 const CHAT_HISTORY_KEY = 'current_chat';
 const PERSONAS_KEY = 'chatbot_personas';
@@ -66,228 +49,118 @@ export const dbService = {
   async addDocuments(files: StoredFile[]): Promise<void> {
     const encryptedFiles = await Promise.all(
         files.map(async (file) => ({
-            name: file.name,
+            id: file.name,
             encryptedPayload: await cryptoService.encrypt(file)
         }))
     );
-
-    const db = await openDB();
-    const transaction = db.transaction(FILE_STORE, 'readwrite');
-    const store = transaction.objectStore(FILE_STORE);
-    
-    for (const file of encryptedFiles) {
-        store.put(file);
-    }
-
-    return new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
+    await db.files.bulkPut(encryptedFiles);
   },
 
   async getDocuments(): Promise<StoredFile[]> {
-    const db = await openDB();
-    const transaction = db.transaction(FILE_STORE, 'readonly');
-    const store = transaction.objectStore(FILE_STORE);
-    const request = store.getAll();
-    return new Promise((resolve, reject) => {
-      request.onsuccess = async () => {
-        const encryptedRecords = request.result as { name: string, encryptedPayload: string }[];
-        const decryptedFiles: StoredFile[] = [];
-        for (const record of encryptedRecords) {
-            try {
-                const decrypted = await cryptoService.decrypt<StoredFile>(record.encryptedPayload);
-                decryptedFiles.push(decrypted);
-            } catch (error) {
-                console.error(`Could not decrypt file ${record.name}:`, error);
-            }
+    const encryptedRecords = await db.files.toArray();
+    const decryptedFiles: StoredFile[] = [];
+    for (const record of encryptedRecords) {
+        try {
+            const decrypted = await cryptoService.decrypt<StoredFile>(record.encryptedPayload);
+            decryptedFiles.push(decrypted);
+        } catch (error) {
+            console.error(`Could not decrypt file ${record.id}:`, error);
         }
-        resolve(decryptedFiles);
-      };
-      request.onerror = () => reject(request.error);
-    });
+    }
+    return decryptedFiles;
   },
 
   async removeDocument(fileName: string): Promise<void> {
-    const db = await openDB();
-    const transaction = db.transaction(FILE_STORE, 'readwrite');
-    const store = transaction.objectStore(FILE_STORE);
-    store.delete(fileName);
-    return new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
+    await db.files.delete(fileName);
   },
   
   async updateDocument(file: StoredFile): Promise<void> {
     const encryptedPayload = await cryptoService.encrypt(file);
-    const db = await openDB();
-    const transaction = db.transaction(FILE_STORE, 'readwrite');
-    const store = transaction.objectStore(FILE_STORE);
-    store.put({ name: file.name, encryptedPayload });
-     return new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
+    await db.files.put({ id: file.name, encryptedPayload });
   },
 
   async saveChatHistory(messages: ChatMessage[]): Promise<void> {
     const encryptedPayload = await cryptoService.encrypt(messages);
-    const db = await openDB();
-    const transaction = db.transaction(CHAT_STORE, 'readwrite');
-    const store = transaction.objectStore(CHAT_STORE);
-    store.put({ id: CHAT_HISTORY_KEY, encryptedPayload });
-    return new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
+    await db.chatHistory.put({ id: CHAT_HISTORY_KEY, encryptedPayload });
   },
 
   async getChatHistory(): Promise<ChatMessage[]> {
-    const db = await openDB();
-    const transaction = db.transaction(CHAT_STORE, 'readonly');
-    const store = transaction.objectStore(CHAT_STORE);
-    const request = store.get(CHAT_HISTORY_KEY);
-    return new Promise((resolve, reject) => {
-      request.onsuccess = async () => {
-        if (request.result && request.result.encryptedPayload) {
-            try {
-                const decrypted = await cryptoService.decrypt<ChatMessage[]>(request.result.encryptedPayload);
-                resolve(decrypted);
-            } catch (error) {
-                console.error("Could not decrypt chat history:", error);
-                resolve([]);
-            }
-        } else {
-            resolve([]);
+    const record = await db.chatHistory.get(CHAT_HISTORY_KEY);
+    if (record && record.encryptedPayload) {
+        try {
+            return await cryptoService.decrypt<ChatMessage[]>(record.encryptedPayload);
+        } catch (error) {
+            console.error("Could not decrypt chat history:", error);
+            return [];
         }
-      };
-      request.onerror = () => reject(request.error);
-    });
+    }
+    return [];
   },
 
   async clearChatHistory(): Promise<void> {
-    const db = await openDB();
-    const transaction = db.transaction(CHAT_STORE, 'readwrite');
-    const store = transaction.objectStore(CHAT_STORE);
-    store.delete(CHAT_HISTORY_KEY);
-     return new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
+    await db.chatHistory.delete(CHAT_HISTORY_KEY);
   },
   
   async savePersonas(personas: Persona[]): Promise<void> {
     const encryptedPayload = await cryptoService.encrypt(personas);
-    const db = await openDB();
-    const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
-    const store = transaction.objectStore(SETTINGS_STORE);
-    store.put({ id: PERSONAS_KEY, encryptedPayload });
-    return new Promise((resolve, reject) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-    });
+    await db.settings.put({ id: PERSONAS_KEY, encryptedPayload });
   },
 
   async getPersonas(): Promise<Persona[]> {
-    const db = await openDB();
-    const transaction = db.transaction(SETTINGS_STORE, 'readonly');
-    const store = transaction.objectStore(SETTINGS_STORE);
-    const request = store.get(PERSONAS_KEY);
-    return new Promise((resolve, reject) => {
-        request.onsuccess = async () => {
-            if (request.result && request.result.encryptedPayload) {
-                try {
-                    const decrypted = await cryptoService.decrypt<Persona[]>(request.result.encryptedPayload);
-                    resolve(decrypted);
-                } catch (error) {
-                    console.error("Could not decrypt personas:", error);
-                    resolve([]);
-                }
-            } else {
-                resolve([]);
-            }
-        };
-        request.onerror = () => reject(request.error);
-    });
+    const record = await db.settings.get(PERSONAS_KEY);
+    if (record && record.encryptedPayload) {
+        try {
+            return await cryptoService.decrypt<Persona[]>(record.encryptedPayload);
+        } catch (error) {
+            console.error("Could not decrypt personas:", error);
+            return [];
+        }
+    }
+    return [];
   },
 
   async saveVoicePreference(voiceName: string): Promise<void> {
       const encryptedPayload = await cryptoService.encrypt(voiceName);
-      const db = await openDB();
-      const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
-      const store = transaction.objectStore(SETTINGS_STORE);
-      store.put({ id: VOICE_PREF_KEY, encryptedPayload });
-      return new Promise((resolve, reject) => {
-          transaction.oncomplete = () => resolve();
-          transaction.onerror = () => reject(transaction.error);
-      });
+      await db.settings.put({ id: VOICE_PREF_KEY, encryptedPayload });
   },
 
   async getVoicePreference(): Promise<string | null> {
-      const db = await openDB();
-      const transaction = db.transaction(SETTINGS_STORE, 'readonly');
-      const store = transaction.objectStore(SETTINGS_STORE);
-      const request = store.get(VOICE_PREF_KEY);
-      return new Promise((resolve, reject) => {
-          request.onsuccess = async () => {
-              if (request.result && request.result.encryptedPayload) {
-                  try {
-                      const decrypted = await cryptoService.decrypt<string>(request.result.encryptedPayload);
-                      resolve(decrypted);
-                  } catch (error) {
-                      console.error("Could not decrypt voice preference:", error);
-                      resolve(null);
-                  }
-              } else {
-                  resolve(null);
-              }
-          };
-          request.onerror = () => reject(request.error);
-      });
+      const record = await db.settings.get(VOICE_PREF_KEY);
+      if (record && record.encryptedPayload) {
+          try {
+              return await cryptoService.decrypt<string>(record.encryptedPayload);
+          } catch (error) {
+              console.error("Could not decrypt voice preference:", error);
+              return null;
+          }
+      }
+      return null;
   },
   
   async saveSetting<T>(key: string, value: T): Promise<void> {
       const encryptedPayload = await cryptoService.encrypt(value);
-      const db = await openDB();
-      const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
-      const store = transaction.objectStore(SETTINGS_STORE);
-      store.put({ id: key, encryptedPayload });
-      return new Promise((resolve, reject) => {
-          transaction.oncomplete = () => resolve();
-          transaction.onerror = () => reject(transaction.error);
-      });
+      await db.settings.put({ id: key, encryptedPayload });
   },
 
   async getSetting<T>(key: string): Promise<T | null> {
-      const db = await openDB();
-      const transaction = db.transaction(SETTINGS_STORE, 'readonly');
-      const store = transaction.objectStore(SETTINGS_STORE);
-      const request = store.get(key);
-      return new Promise((resolve, reject) => {
-          request.onsuccess = async () => {
-              if (request.result && request.result.encryptedPayload) {
-                  try {
-                      const decrypted = await cryptoService.decrypt<T>(request.result.encryptedPayload);
-                      resolve(decrypted);
-                  } catch (error) {
-                      console.error(`Could not decrypt setting "${key}":`, error);
-                      resolve(null);
-                  }
-              } else {
-                  resolve(null);
-              }
-          };
-          request.onerror = () => reject(request.error);
-      });
+      const record = await db.settings.get(key);
+      if (record && record.encryptedPayload) {
+          try {
+              return await cryptoService.decrypt<T>(record.encryptedPayload);
+          } catch (error) {
+              console.error(`Could not decrypt setting "${key}":`, error);
+              return null;
+          }
+      }
+      return null;
   },
 
-  async getApiConfigs(): Promise<import('../types.ts').ApiConfig[]> {
-      const configs = await this.getSetting<import('../types.ts').ApiConfig[]>(API_CONFIGS_KEY);
+  async getApiConfigs(): Promise<ApiConfig[]> {
+      const configs = await this.getSetting<ApiConfig[]>(API_CONFIGS_KEY);
       return configs || [];
   },
 
-  async saveApiConfigs(configs: import('../types.ts').ApiConfig[]): Promise<void> {
+  async saveApiConfigs(configs: ApiConfig[]): Promise<void> {
       await this.saveSetting(API_CONFIGS_KEY, configs);
   },
 
@@ -301,52 +174,29 @@ export const dbService = {
 
   async addMemory(memory: Memory): Promise<void> {
       const encryptedPayload = await cryptoService.encrypt(memory);
-      const db = await openDB();
-      const transaction = db.transaction(MEMORY_STORE, 'readwrite');
-      const store = transaction.objectStore(MEMORY_STORE);
-      store.put({ id: memory.id, encryptedPayload });
-      return new Promise((resolve, reject) => {
-          transaction.oncomplete = () => resolve();
-          transaction.onerror = () => reject(transaction.error);
-      });
+      await db.memories.put({ id: memory.id, encryptedPayload });
   },
 
   async getMemories(): Promise<Memory[]> {
-      const db = await openDB();
-      const transaction = db.transaction(MEMORY_STORE, 'readonly');
-      const store = transaction.objectStore(MEMORY_STORE);
-      const request = store.getAll();
-      return new Promise((resolve, reject) => {
-          request.onsuccess = async () => {
-              const encryptedRecords = request.result as { id: string, encryptedPayload: string }[];
-              const decryptedMemories: Memory[] = [];
-              for (const record of encryptedRecords) {
-                  try {
-                      const decrypted = await cryptoService.decrypt<Memory>(record.encryptedPayload);
-                      decryptedMemories.push(decrypted);
-                  } catch (error) {
-                      console.error("Could not decrypt memory:", error);
-                  }
-              }
-              resolve(decryptedMemories);
-          };
-          request.onerror = () => reject(request.error);
-      });
+      const encryptedRecords = await db.memories.toArray();
+      const decryptedMemories: Memory[] = [];
+      for (const record of encryptedRecords) {
+          try {
+              const decrypted = await cryptoService.decrypt<Memory>(record.encryptedPayload);
+              decryptedMemories.push(decrypted);
+          } catch (error) {
+              console.error("Could not decrypt memory:", error);
+          }
+      }
+      return decryptedMemories;
   },
 
   async clearAllData(): Promise<void> {
-      const db = await openDB();
-      const transaction = db.transaction([FILE_STORE, CHAT_STORE, SETTINGS_STORE, MEMORY_STORE], 'readwrite');
-      const fileStore = transaction.objectStore(FILE_STORE);
-      const chatStore = transaction.objectStore(CHAT_STORE);
-      const settingsStore = transaction.objectStore(SETTINGS_STORE);
-      const memoryStore = transaction.objectStore(MEMORY_STORE);
-
       await Promise.all([
-          new Promise<void>((res, rej) => { const r = fileStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
-          new Promise<void>((res, rej) => { const r = chatStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
-          new Promise<void>((res, rej) => { const r = settingsStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
-          new Promise<void>((res, rej) => { const r = memoryStore.clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
+          db.files.clear(),
+          db.chatHistory.clear(),
+          db.settings.clear(),
+          db.memories.clear()
       ]);
   },
 

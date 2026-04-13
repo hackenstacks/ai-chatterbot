@@ -18,7 +18,11 @@ const ApiConfigModal: React.FC<ApiConfigModalProps> = ({ isOpen, onClose, onSave
         name: '',
         endpointUrl: '',
         apiKey: '',
-        model: ''
+        model: '',
+        imageModel: '',
+        videoModel: '',
+        ttsModel: '',
+        embeddingModel: ''
     });
 
     useEffect(() => {
@@ -30,7 +34,11 @@ const ApiConfigModal: React.FC<ApiConfigModalProps> = ({ isOpen, onClose, onSave
                 name: '',
                 endpointUrl: '',
                 apiKey: '',
-                model: ''
+                model: '',
+                imageModel: '',
+                videoModel: '',
+                ttsModel: '',
+                embeddingModel: ''
             });
         }
     }, [initialConfig, isOpen]);
@@ -48,7 +56,11 @@ const ApiConfigModal: React.FC<ApiConfigModalProps> = ({ isOpen, onClose, onSave
             provider: config.provider,
             endpointUrl: config.endpointUrl || '',
             apiKey: config.apiKey || '',
-            model: config.model || ''
+            model: config.model || '',
+            imageModel: config.imageModel || '',
+            videoModel: config.videoModel || '',
+            ttsModel: config.ttsModel || '',
+            embeddingModel: config.embeddingModel || ''
         });
         onClose();
     };
@@ -104,13 +116,57 @@ const ApiConfigModal: React.FC<ApiConfigModalProps> = ({ isOpen, onClose, onSave
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-1">Default Model (Optional)</label>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">Default/Chat Model (Optional)</label>
                         <input 
                             type="text" 
                             value={config.model} 
                             onChange={e => setConfig({...config, model: e.target.value})}
                             className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                             placeholder="gpt-4o"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">Image Model (Optional)</label>
+                        <input 
+                            type="text" 
+                            value={config.imageModel} 
+                            onChange={e => setConfig({...config, imageModel: e.target.value})}
+                            className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            placeholder="dall-e-3"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">Video Model (Optional)</label>
+                        <input 
+                            type="text" 
+                            value={config.videoModel} 
+                            onChange={e => setConfig({...config, videoModel: e.target.value})}
+                            className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            placeholder="sora"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">TTS Model (Optional)</label>
+                        <input 
+                            type="text" 
+                            value={config.ttsModel} 
+                            onChange={e => setConfig({...config, ttsModel: e.target.value})}
+                            className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            placeholder="tts-1"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">Embedding Model (Optional)</label>
+                        <input 
+                            type="text" 
+                            value={config.embeddingModel} 
+                            onChange={e => setConfig({...config, embeddingModel: e.target.value})}
+                            className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            placeholder="text-embedding-3-small"
                         />
                     </div>
                 </div>

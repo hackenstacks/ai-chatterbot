@@ -168,6 +168,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
     const [activePersonaId, setActivePersonaId] = useState<string>('default');
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [error, setError] = useState<FormattedError | null>(null);
+    const [activeApiConfig, setActiveApiConfig] = useState<any>(null);
     
     const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -195,12 +196,21 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         const loadPersonas = () => {
             dbService.getPersonas().then(setPersonas).catch(console.error);
         };
+        const loadApiConfig = async () => {
+            const configs = await dbService.getApiConfigs();
+            const activeId = await dbService.getActiveApiConfigId();
+            const activeConfig = configs.find(c => c.id === activeId) || null;
+            setActiveApiConfig(activeConfig);
+        };
 
         loadPersonas(); // Initial load
+        loadApiConfig();
 
         window.addEventListener('personasUpdated', loadPersonas);
+        window.addEventListener('apiConfigsUpdated', loadApiConfig);
         return () => {
             window.removeEventListener('personasUpdated', loadPersonas);
+            window.removeEventListener('apiConfigsUpdated', loadApiConfig);
         };
     }, []);
 
@@ -450,7 +460,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                 switch (name) {
                     case 'searchWeb':
                         const geo = (location.latitude && location.longitude) ? { latitude: location.latitude, longitude: location.longitude } : undefined;
-                        const searchResponse = await GeminiService.groundedSearch(args.query, args.useMaps, geo);
+                        const searchResponse = await GeminiService.groundedSearch(args.query, args.useMaps, geo, activeApiConfig);
                         const searchResultText = searchResponse.text;
                         const groundingChunks = searchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks;
                         if (groundingChunks) {
@@ -475,7 +485,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                         break;
                     
                     case 'browseWebsite':
-                        const browseSummary = await GeminiService.browseWebsite(args.url);
+                        const browseSummary = await GeminiService.browseWebsite(args.url, activeApiConfig);
                         setAnalysisResult(browseSummary);
                         result = { status: 'success', summary: browseSummary };
                         break;
@@ -735,7 +745,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                         setConnectionState('closed');
                     }
                 },
-            }, voiceName, [{ functionDeclarations }], finalSystemInstruction);
+            }, voiceName, [{ functionDeclarations }], finalSystemInstruction, activeApiConfig);
 
             sessionPromiseRef.current = sessionPromise;
 

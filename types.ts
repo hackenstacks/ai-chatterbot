@@ -46,7 +46,11 @@ export interface ApiConfig {
   provider: string;
   endpointUrl: string;
   apiKey: string;
-  model: string;
+  model: string; // Default/Chat model
+  imageModel?: string;
+  videoModel?: string;
+  ttsModel?: string;
+  embeddingModel?: string;
 }
 
 export type FeatureId =

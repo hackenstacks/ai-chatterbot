@@ -87,7 +87,7 @@ export const GeminiService = {
 
     getEmbedding: async (text: string, config?: ApiConfig | null): Promise<number[]> => {
         const response = await getAi(config).models.embedContent({
-            model: 'text-embedding-004',
+            model: config?.embeddingModel || 'text-embedding-004',
             contents: text,
         });
         return response.embedding?.values || [];
@@ -159,7 +159,7 @@ export const GeminiService = {
 
     generateImage: async (prompt: string, aspectRatio: string, negativePrompt?: string, config?: ApiConfig | null): Promise<string[]> => {
         const response = await getAi(config).models.generateContent({
-            model: config?.model || 'gemini-2.5-flash-image',
+            model: config?.imageModel || 'gemini-2.5-flash-image',
             contents: { parts: [{ text: `${prompt}${negativePrompt ? ` (avoid: ${negativePrompt})` : ''}` }] },
             config: { imageConfig: { aspectRatio: aspectRatio as any } }
         });
@@ -172,14 +172,14 @@ export const GeminiService = {
 
     analyzeVideo: async (prompt: string, videoBase64: string, mimeType: string, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
         return getAi(config).models.generateContent({
-            model: config?.model || 'gemini-3-pro-preview',
+            model: config?.videoModel || 'gemini-3-pro-preview',
             contents: { parts: [{ inlineData: { data: videoBase64, mimeType } }, { text: prompt }] },
         });
     },
 
     transcribeAudio: async (audioBase64: string, mimeType: string, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
         return getAi(config).models.generateContent({
-            model: config?.model || 'gemini-3-flash-preview',
+            model: config?.ttsModel || 'gemini-3-flash-preview',
             contents: { parts: [{ inlineData: { data: audioBase64, mimeType } }, { text: 'Transcribe this audio:' }] },
         });
     },
