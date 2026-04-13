@@ -18,7 +18,7 @@ import { LIVE_VOICES } from '../constants.ts';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error' | 'closed' | 'reconnecting';
 const MAX_RECONNECT_ATTEMPTS = 3;
-const SUMMARY_THRESHOLD = 5; // Summarize after 5 turns (user + model)
+const SUMMARY_THRESHOLD = 20; // Summarize after 20 turns (user + model)
 
 interface SessionData {
     transcripts: { user: string, model: string }[];
@@ -365,11 +365,15 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         e.target.value = '';
     };
 
-    const saveToLibrary = async (content: string, defaultName: string, type: 'text' | 'image') => {
-        let fileName = prompt("Enter a name for the saved file:", defaultName);
-        if (!fileName) return;
+    const saveToLibrary = async (content: string, defaultName: string, type: 'text' | 'image', silent: boolean = false) => {
+        let fileName = defaultName;
+        if (!silent) {
+            const promptedName = prompt("Enter a name for the saved file:", defaultName);
+            if (!promptedName) return;
+            fileName = promptedName;
+        }
 
-        if (documents.some(doc => doc.name === fileName)) {
+        if (!silent && documents.some(doc => doc.name === fileName)) {
             alert("A file with this name already exists in the library. Please choose a different name.");
             return;
         }
@@ -390,7 +394,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                 data: base64Data,
             };
         } else { // image
-            const base64Data = content.split(',')[1];
+            const base64Data = content.split(',')[1] || content;
             const mimeType = 'image/jpeg';
             const blob = base64ToBlob(base64Data, mimeType);
             newFile = {
@@ -405,11 +409,14 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
 
         try {
             await dbService.addDocuments([newFile]);
-            setDocuments(prev => [...prev, newFile]);
-            alert(`'${fileName}' saved to File Library.`);
+            setDocuments(prev => {
+                const filtered = prev.filter(d => d.name !== fileName);
+                return [...filtered, newFile];
+            });
+            if (!silent) alert(`'${fileName}' saved to File Library.`);
         } catch (error) {
             console.error("Failed to save file:", error);
-            alert("Could not save the file to the library.");
+            if (!silent) alert("Could not save the file to the library.");
         }
     };
     
@@ -418,6 +425,14 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         const formattedTranscript = transcripts.map(t => `You:\n${t.user}\n\nGemini:\n${t.model}`).join('\n\n---\n\n');
         saveToLibrary(formattedTranscript, `live-transcript-${new Date().toISOString()}.txt`, 'text');
     };
+
+    // Auto-save transcript
+    useEffect(() => {
+        if (transcripts.length > 0) {
+            const formattedTranscript = transcripts.map(t => `You:\n${t.user}\n\nGemini:\n${t.model}`).join('\n\n---\n\n');
+            saveToLibrary(formattedTranscript, `auto_live_transcript.txt`, 'text', true);
+        }
+    }, [transcripts]);
 
     const handleToolCall = async (functionCalls: FunctionCall[]) => {
         setIsProcessingTool(true);
@@ -470,7 +485,8 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                         const images = await GeminiService.generateImage(fullPrompt, "16:9", args.negativePrompt);
                         if (images.length > 0) {
                             setGeneratedImageUrl(`data:image/jpeg;base64,${images[0]}`);
-                            result = { status: 'success', message: 'Image generated successfully.' };
+                            saveToLibrary(images[0], `generated_image_${Date.now()}.jpg`, 'image', true);
+                            result = { status: 'success', message: 'Image generated successfully and saved to library.' };
                         } else {
                             result = { status: 'error', message: 'Image generation failed to return an image.' };
                         }
@@ -640,7 +656,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
                 ].filter(Boolean).join('\n');
             }
             
-            const finalSystemInstruction = customSystemInstruction || (conversationSummaryRef.current ? `${conversationSummaryRef.current}\n\n${systemInstruction}` : systemInstruction);
+            const finalSystemInstruction = customSystemInstruction || (conversationSummaryRef.current ? `${conversationSummaryRef.current}\n\n${systemInstruction}\n\n[Recent History]:\n${transcripts.slice(-5).map(t => `User: ${t.user}\nModel: ${t.model}`).join('\n\n')}` : systemInstruction);
 
             const sessionPromise = GeminiService.connectLive({
                 onopen: () => {
@@ -741,10 +757,43 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         try {
             const conversationText = currentTranscripts.map(t => `User: ${t.user}\nModel: ${t.model}`).join('\n\n');
             const summary = await GeminiService.summarizeConversation([{ role: 'user', parts: [{ text: `Summarize this conversation: ${conversationText}` }] }]);
+            
+            // Save summary to LTM (Episodic Memory)
+            await dbService.addMemory({
+                id: crypto.randomUUID(),
+                content: summary,
+                embedding: await GeminiService.getEmbedding(summary),
+                timestamp: Date.now(),
+                tags: ['working-summary', 'episodic', 'live-chat'],
+                associatedPersonaId: activePersonaId
+            });
+
+            // Check for hierarchical summarization (summarize the summaries)
+            const allMemories = await dbService.getMemories();
+            const summaryMemories = allMemories.filter(m => m.tags.includes('working-summary') && m.tags.includes('live-chat') && m.associatedPersonaId === activePersonaId);
+            
+            // If we have roughly 5 summaries (which corresponds to 5 * 20 = 100 rounds)
+            if (summaryMemories.length >= 5) {
+                const summariesText = summaryMemories.map(m => m.content).join('\n\n');
+                const metaSummary = await GeminiService.summarizeConversation([{ role: 'user', parts: [{ text: `Create a high-level, comprehensive summary of these past conversation summaries:\n\n${summariesText}` }] }]);
+                
+                await dbService.addMemory({
+                    id: crypto.randomUUID(),
+                    content: metaSummary,
+                    embedding: await GeminiService.getEmbedding(metaSummary),
+                    timestamp: Date.now(),
+                    tags: ['meta-summary', 'semantic', 'live-chat'],
+                    associatedPersonaId: activePersonaId
+                });
+            }
+
             conversationSummaryRef.current = `This is a summary of the conversation so far, continue from here:\n${summary}`;
             
-            const summaryNotification = { user: '', model: `[System: I've summarized our conversation to maintain context.]` };
-            setTranscripts(prev => [...prev, summaryNotification]);
+            // Keep the last 5 transcripts for continuity
+            const recentTranscripts = currentTranscripts.slice(-5);
+            
+            const summaryNotification = { user: '', model: `[System: I've summarized our conversation to maintain context, but kept the last few messages for continuity.]` };
+            setTranscripts([...recentTranscripts, summaryNotification]);
 
             // Wait for UI to update before restarting
             setTimeout(() => {
@@ -759,7 +808,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
             handleStartConversation(false);
             setIsSummarizing(false);
         }
-    }, [isSummarizing, transcripts, handleStopConversation, handleStartConversation]);
+    }, [isSummarizing, transcripts, handleStopConversation, handleStartConversation, activePersonaId]);
 
     useEffect(() => {
         if (transcripts.length > 0 && transcripts.length % SUMMARY_THRESHOLD === 0 && connectionState === 'connected' && !isSummarizing) {
@@ -781,7 +830,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ documents, setDocum
         if (file.type.startsWith("video/")) return <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={fileUrl} controls className="w-full rounded-lg" />;
         // FIX: Cast mediaRef to the correct element type to resolve union type conflict.
         if (file.type.startsWith("audio/")) return <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} src={fileUrl} controls className="w-full" />;
-        return <div className="text-center text-slate-300"> <p className="font-bold">{file.name}</p> <p className="text-sm">{formatBytes(file.size)}</p> d></div>;
+        return <div className="text-center text-slate-300"> <p className="font-bold">{file.name}</p> <p className="text-sm">{formatBytes(file.size)}</p></div>;
     };
     
     const renderOutput = () => {

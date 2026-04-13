@@ -17,8 +17,8 @@ import { encode as base64Encode, fileToBase64, base64ToBlob } from '../utils/hel
 import { parseError } from '../utils/errorUtils.ts';
 
 
-const HISTORY_SUMMARY_THRESHOLD = 15;
-const MESSAGES_TO_KEEP_AFTER_SUMMARY = 5;
+const HISTORY_SUMMARY_THRESHOLD = 20;
+const MESSAGES_TO_KEEP_AFTER_SUMMARY = 10;
 
 const createDefaultPersona = (): Persona => ({
   id: crypto.randomUUID(),
@@ -63,6 +63,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
     const [ai2aiTopic, setAi2aiTopic] = useState<string>('');
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
     const [editInput, setEditInput] = useState('');
+    const [activeApiConfig, setActiveApiConfig] = useState<any>(null);
 
     const recognitionRef = useRef<any>(null); // SpeechRecognition
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -75,7 +76,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
             const allMemories = await dbService.getMemories();
             if (allMemories.length === 0) return '';
 
-            const queryEmbedding = await GeminiService.getEmbedding(query);
+            const queryEmbedding = await GeminiService.getEmbedding(query, activeApiConfig);
             
             // Client-side cosine similarity search
             const scoredMemories = allMemories.map(m => ({
@@ -96,7 +97,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
             console.error("RAG retrieval failed:", e);
             return '';
         }
-    }, []);
+    }, [activeApiConfig]);
     
     const constructSystemPrompt = useCallback((p: Persona, files: string[], memories: string = ''): string => {
         let prompt = p.systemPrompt || `You are a helpful AI assistant.`;
@@ -120,12 +121,17 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
     
     const initializeChatState = useCallback(async () => {
         try {
-            const [history, savedPersonas, savedFileAccess] = await Promise.all([
+            const [history, savedPersonas, savedFileAccess, configs, activeId] = await Promise.all([
                 dbService.getChatHistory(),
                 dbService.getPersonas(),
-                dbService.getSetting<string[]>('accessibleFiles')
+                dbService.getSetting<string[]>('accessibleFiles'),
+                dbService.getApiConfigs(),
+                dbService.getActiveApiConfigId()
             ]);
             
+            const activeConfig = configs.find(c => c.id === activeId) || null;
+            setActiveApiConfig(activeConfig);
+
             setPersonas(savedPersonas);
 
             let currentPersona = savedPersonas.find(p => p.isActive);
@@ -148,7 +154,11 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
     useEffect(() => {
         initializeChatState(); // Initial load
         window.addEventListener('personasUpdated', initializeChatState);
-        return () => { window.removeEventListener('personasUpdated', initializeChatState); };
+        window.addEventListener('apiConfigsUpdated', initializeChatState);
+        return () => { 
+            window.removeEventListener('personasUpdated', initializeChatState); 
+            window.removeEventListener('apiConfigsUpdated', initializeChatState);
+        };
     }, [initializeChatState]);
 
     // Re-initialize Chat object when dependencies change
@@ -168,14 +178,32 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
                     parts: m.parts.map(p => ({ text: p.text })) 
                 }));
             
-            const newChat = GeminiService.createChatWithHistory(chatHistory, baseSystemPrompt);
+            const newChat = GeminiService.createChatWithHistory(chatHistory, baseSystemPrompt, activeApiConfig);
             setChat(newChat);
         }
-    }, [activePersona, accessibleFiles, messages.length, constructSystemPrompt]); // Only re-create if message count changes to avoid thrashing on typing
+    }, [activePersona, accessibleFiles, messages.length, constructSystemPrompt, activeApiConfig]); // Only re-create if message count changes to avoid thrashing on typing
     
     useEffect(() => {
         if (messages.length > 0) {
             dbService.saveChatHistory(messages).catch(console.error);
+            
+            // Auto-save transcript to file library
+            const transcriptText = messages.map(m => `${m.role.toUpperCase()}: ${m.parts.map(p => p.text).join(' ')}`).join('\n\n');
+            const fileName = `auto_chat_transcript.txt`;
+            const newFile: StoredFile = {
+                name: fileName,
+                type: 'text/plain',
+                size: transcriptText.length,
+                lastModified: Date.now(),
+                isArchived: false,
+                data: btoa(unescape(encodeURIComponent(transcriptText)))
+            };
+            dbService.addDocuments([newFile]).then(() => {
+                setDocuments(prev => {
+                    const filtered = prev.filter(d => d.name !== fileName);
+                    return [...filtered, newFile];
+                });
+            }).catch(console.error);
         }
     }, [messages]);
 
@@ -212,16 +240,35 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
 
     // --- Core Interaction Logic ---
 
+    const saveImageToLibrary = async (base64Data: string) => {
+        const fileName = `generated_image_${Date.now()}.jpg`;
+        const newFile: StoredFile = {
+            name: fileName,
+            type: 'image/jpeg',
+            size: Math.round((base64Data.length * 3) / 4),
+            lastModified: Date.now(),
+            isArchived: false,
+            data: base64Data
+        };
+        try {
+            await dbService.addDocuments([newFile]);
+            setDocuments(prev => [...prev.filter(d => d.name !== fileName), newFile]);
+        } catch (e) {
+            console.error("Failed to auto-save image:", e);
+        }
+    };
+
     const handleFunctionCalls = async (functionCalls: FunctionCall[]) => {
         for (const call of functionCalls) {
             if (call.name === 'generateImage' && call.args) {
                 setIsLoading(true);
                 try {
                     const fullPrompt = call.args.style ? `${call.args.prompt}, in the style of ${call.args.style}` : call.args.prompt;
-                    const images = await GeminiService.generateImage(fullPrompt, "1:1");
+                    const images = await GeminiService.generateImage(fullPrompt, "1:1", undefined, activeApiConfig);
                     if (images.length > 0) {
                         const imageUrl = `data:image/jpeg;base64,${images[0]}`;
                         setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'model', parts: [{ text: '' }], imageUrl, timestamp: Date.now() }]);
+                        saveImageToLibrary(images[0]);
                     }
                 } catch (error) {
                     console.error("Image generation tool failed:", error);
@@ -382,9 +429,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
              // Let's manually trigger to be sure.
              setIsLoading(true);
              try {
-                const images = await GeminiService.generateImage(prompt, "1:1");
+                const images = await GeminiService.generateImage(prompt, "1:1", undefined, activeApiConfig);
                 if (images.length > 0) {
                      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', parts: [{text: textToSend}], timestamp: Date.now() }, { id: crypto.randomUUID(), role: 'model', parts: [{ text: '' }], imageUrl: `data:image/jpeg;base64,${images[0]}`, timestamp: Date.now() }]);
+                     saveImageToLibrary(images[0]);
                 }
              } catch (e) {
                  console.error(e);
@@ -499,19 +547,41 @@ const ChatBot: React.FC<ChatBotProps> = ({ documents, setDocuments }) => {
         try {
             // Filter system messages before summarizing
             const contentToSummarize = messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, parts: m.parts }));
-            const summary = await GeminiService.summarizeConversation(contentToSummarize as Content[]);
+            const summary = await GeminiService.summarizeConversation(contentToSummarize as Content[], activeApiConfig);
             
             // Store summary in Memory Store (LTM)
             await dbService.addMemory({
                 id: crypto.randomUUID(),
                 content: summary,
-                embedding: await GeminiService.getEmbedding(summary),
+                embedding: await GeminiService.getEmbedding(summary, activeApiConfig),
                 timestamp: Date.now(),
                 tags: ['working-summary', 'episodic'],
                 associatedPersonaId: activePersona.id
             });
 
-            // Compact history
+            // Check for hierarchical summarization (summarize the summaries)
+            const allMemories = await dbService.getMemories();
+            const summaryMemories = allMemories.filter(m => m.tags.includes('working-summary') && m.associatedPersonaId === activePersona.id);
+            
+            // If we have roughly 5 summaries (which corresponds to 5 * 20 = 100 rounds)
+            if (summaryMemories.length >= 5) {
+                const summariesText = summaryMemories.map(m => m.content).join('\n\n');
+                const metaSummary = await GeminiService.summarizeConversation([{ role: 'user', parts: [{ text: `Create a high-level, comprehensive summary of these past conversation summaries:\n\n${summariesText}` }] }]);
+                
+                await dbService.addMemory({
+                    id: crypto.randomUUID(),
+                    content: metaSummary,
+                    embedding: await GeminiService.getEmbedding(metaSummary),
+                    timestamp: Date.now(),
+                    tags: ['meta-summary', 'semantic'],
+                    associatedPersonaId: activePersona.id
+                });
+                
+                // Optionally, we could delete the older working-summaries here to save space,
+                // but keeping them allows for more granular RAG retrieval.
+            }
+
+            // Compact history: keep summary and recent messages
             const recentMessages = messages.slice(messages.length - MESSAGES_TO_KEEP_AFTER_SUMMARY);
             const newHistory: ChatMessage[] = [
                 { id: crypto.randomUUID(), role: 'user', parts: [{ text: `[SYSTEM]: Previous conversation summary:\n${summary}` }], timestamp: Date.now() },

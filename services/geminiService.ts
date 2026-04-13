@@ -1,13 +1,29 @@
 
 import { GoogleGenAI, Type, Modality, Chat, GenerateContentResponse, LiveServerMessage, FunctionDeclaration, Content } from '@google/genai';
-import { Persona } from '../types.ts';
+import { Persona, ApiConfig } from '../types.ts';
 
-const getAi = (): GoogleGenAI => {
-    if (!process.env.API_KEY) {
-        console.error("API_KEY environment variable not set.");
+const getAi = (config?: ApiConfig | null): GoogleGenAI => {
+    let apiKey = process.env.API_KEY;
+    let baseUrl = undefined;
+
+    if (config) {
+        if (config.apiKey) apiKey = config.apiKey;
+        if (config.endpointUrl) baseUrl = config.endpointUrl;
+    }
+
+    if (!apiKey && !baseUrl) {
+        console.error("API_KEY environment variable not set and no custom config provided.");
         throw new Error("API key is missing.");
     }
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    // The @google/genai SDK might not support custom base URLs directly in the constructor in all versions,
+    // but we can pass it if it does, or use fetch overrides. For now, we pass it if available.
+    // Note: If using a custom OpenAI-compatible endpoint, we'd need a different SDK or fetch wrapper.
+    // Assuming the user wants to use Gemini SDK for everything or we just pass baseUrl if supported.
+    const options: any = { apiKey };
+    if (baseUrl) options.baseUrl = baseUrl;
+
+    return new GoogleGenAI(options);
 };
 
 type LiveCallbacks = {
@@ -48,9 +64,9 @@ export const cosineSimilarity = (vecA: number[], vecB: number[]): number => {
 };
 
 export const GeminiService = {
-    createChat: (systemInstruction?: string): Chat => {
-        return getAi().chats.create({
-            model: 'gemini-3-flash-preview',
+    createChat: (systemInstruction?: string, config?: ApiConfig | null): Chat => {
+        return getAi(config).chats.create({
+            model: config?.model || 'gemini-3-flash-preview',
             config: { 
                 ...(systemInstruction && { systemInstruction }),
                 tools: chatTools,
@@ -58,9 +74,9 @@ export const GeminiService = {
         });
     },
 
-    createChatWithHistory: (history: Content[], systemInstruction?: string): Chat => {
-        return getAi().chats.create({
-            model: 'gemini-3-flash-preview',
+    createChatWithHistory: (history: Content[], systemInstruction?: string, config?: ApiConfig | null): Chat => {
+        return getAi(config).chats.create({
+            model: config?.model || 'gemini-3-flash-preview',
             history: history,
             config: { 
                 ...(systemInstruction && { systemInstruction }),
@@ -69,15 +85,15 @@ export const GeminiService = {
         });
     },
 
-    getEmbedding: async (text: string): Promise<number[]> => {
-        const response = await getAi().models.embedContent({
+    getEmbedding: async (text: string, config?: ApiConfig | null): Promise<number[]> => {
+        const response = await getAi(config).models.embedContent({
             model: 'text-embedding-004',
             contents: text,
         });
         return response.embedding?.values || [];
     },
 
-    getPersonaSuggestion: async (field: keyof Persona, currentPersona: Partial<Persona>): Promise<string> => {
+    getPersonaSuggestion: async (field: keyof Persona, currentPersona: Partial<Persona>, config?: ApiConfig | null): Promise<string> => {
         // FIX: Exclude avatarUrl (base64) and internal IDs to prevent exceeding token limits.
         const { avatarUrl, id, isActive, voice, ...relevantContext } = currentPersona;
 
@@ -88,19 +104,19 @@ export const GeminiService = {
         
         const prompt = `Based on the following partial persona, suggest a creative value for "${field}".\n\nContext: ${personaContext || 'No details yet.'}`;
         
-        const response = await getAi().models.generateContent({
-            model: 'gemini-3-flash-preview',
+        const response = await getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-flash-preview',
             contents: prompt
         });
         
         return response.text.trim();
     },
 
-    createPersonaFromText: async (description: string): Promise<Partial<Persona>> => {
+    createPersonaFromText: async (description: string, config?: ApiConfig | null): Promise<Partial<Persona>> => {
         const prompt = `Extract character attributes into JSON:\n\n${description}`;
 
-        const response = await getAi().models.generateContent({
-            model: 'gemini-3-flash-preview',
+        const response = await getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-flash-preview',
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
@@ -121,29 +137,29 @@ export const GeminiService = {
         return JSON.parse(response.text.trim());
     },
 
-    summarizeConversation: async (history: Content[]): Promise<string> => {
+    summarizeConversation: async (history: Content[], config?: ApiConfig | null): Promise<string> => {
         const conversationText = history
             .map(c => `${c.role}: ${c.parts.map(p => ('text' in p) ? p.text : '').join('')}`)
             .join('\n\n');
 
-        const response = await getAi().models.generateContent({
-            model: 'gemini-3-flash-preview',
+        const response = await getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-flash-preview',
             contents: `Create a detailed working summary of this conversation to serve as long-term memory. Capture key events, user preferences, and the current state of the narrative:\n\n${conversationText}`,
         });
 
         return response.text;
     },
 
-    analyzeImage: async (prompt: string, imageBase64: string, mimeType: string): Promise<GenerateContentResponse> => {
-        return getAi().models.generateContent({
-            model: 'gemini-3-flash-preview',
+    analyzeImage: async (prompt: string, imageBase64: string, mimeType: string, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
+        return getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-flash-preview',
             contents: { parts: [{ inlineData: { data: imageBase64, mimeType } }, { text: prompt }] },
         });
     },
 
-    generateImage: async (prompt: string, aspectRatio: string, negativePrompt?: string): Promise<string[]> => {
-        const response = await getAi().models.generateContent({
-            model: 'gemini-2.5-flash-image',
+    generateImage: async (prompt: string, aspectRatio: string, negativePrompt?: string, config?: ApiConfig | null): Promise<string[]> => {
+        const response = await getAi(config).models.generateContent({
+            model: config?.model || 'gemini-2.5-flash-image',
             contents: { parts: [{ text: `${prompt}${negativePrompt ? ` (avoid: ${negativePrompt})` : ''}` }] },
             config: { imageConfig: { aspectRatio: aspectRatio as any } }
         });
@@ -154,33 +170,33 @@ export const GeminiService = {
         return images;
     },
 
-    analyzeVideo: async (prompt: string, videoBase64: string, mimeType: string): Promise<GenerateContentResponse> => {
-        return getAi().models.generateContent({
-            model: 'gemini-3-pro-preview',
+    analyzeVideo: async (prompt: string, videoBase64: string, mimeType: string, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
+        return getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-pro-preview',
             contents: { parts: [{ inlineData: { data: videoBase64, mimeType } }, { text: prompt }] },
         });
     },
 
-    transcribeAudio: async (audioBase64: string, mimeType: string): Promise<GenerateContentResponse> => {
-        return getAi().models.generateContent({
-            model: 'gemini-3-flash-preview',
+    transcribeAudio: async (audioBase64: string, mimeType: string, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
+        return getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-flash-preview',
             contents: { parts: [{ inlineData: { data: audioBase64, mimeType } }, { text: 'Transcribe this audio:' }] },
         });
     },
 
-    analyzeDocument: async (text: string, prompt: string): Promise<GenerateContentResponse> => {
-        return getAi().models.generateContent({
-            model: 'gemini-3-flash-preview',
+    analyzeDocument: async (text: string, prompt: string, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
+        return getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-flash-preview',
             contents: `${prompt}\n\nContent:\n${text}`,
         });
     },
 
-    groundedSearch: async (prompt: string, useMaps: boolean, location?: {latitude: number, longitude: number}): Promise<GenerateContentResponse> => {
+    groundedSearch: async (prompt: string, useMaps: boolean, location?: {latitude: number, longitude: number}, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
         const tools: any[] = [{ googleSearch: {} }];
         if (useMaps) tools.push({ googleMaps: {} });
 
-        return getAi().models.generateContent({
-            model: 'gemini-3-flash-preview',
+        return getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-flash-preview',
             contents: prompt,
             config: {
                 tools,
@@ -189,13 +205,13 @@ export const GeminiService = {
         });
     },
     
-    browseWebsite: async (url: string): Promise<string> => {
+    browseWebsite: async (url: string, config?: ApiConfig | null): Promise<string> => {
         try {
             const response = await fetch(url);
             const html = await response.text();
             const textContent = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-            const summaryResponse = await getAi().models.generateContent({
-                model: 'gemini-3-flash-preview',
+            const summaryResponse = await getAi(config).models.generateContent({
+                model: config?.model || 'gemini-3-flash-preview',
                 contents: `Summarize this content:\n\n${textContent.substring(0, 10000)}`
             });
             return summaryResponse.text;
@@ -204,17 +220,17 @@ export const GeminiService = {
         }
     },
 
-    complexReasoning: async (prompt: string): Promise<GenerateContentResponse> => {
-        return getAi().models.generateContent({
-            model: 'gemini-3-pro-preview',
+    complexReasoning: async (prompt: string, config?: ApiConfig | null): Promise<GenerateContentResponse> => {
+        return getAi(config).models.generateContent({
+            model: config?.model || 'gemini-3-pro-preview',
             contents: prompt,
             config: { thinkingConfig: { thinkingBudget: 32768 } },
         });
     },
 
-    connectLive: (callbacks: LiveCallbacks, voiceName: string, tools?: { functionDeclarations: FunctionDeclaration[] }[], customSystemInstruction?: string) => {
-        return getAi().live.connect({
-            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+    connectLive: (callbacks: LiveCallbacks, voiceName: string, tools?: { functionDeclarations: FunctionDeclaration[] }[], customSystemInstruction?: string, config?: ApiConfig | null) => {
+        return getAi(config).live.connect({
+            model: config?.model || 'gemini-2.5-flash-native-audio-preview-09-2025',
             callbacks,
             config: {
                 responseModalities: [Modality.AUDIO],

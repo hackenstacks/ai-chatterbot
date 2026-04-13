@@ -4,8 +4,9 @@ import FeatureLayout from './common/FeatureLayout.tsx';
 import { dbService } from '../services/dbService.ts';
 import { cryptoService } from '../services/cryptoService.ts';
 import { DownloadIcon, UploadIcon, EditIcon, TrashIcon, ShareIcon } from '../components/Icons.tsx';
-import { Persona } from '../types.ts';
+import { Persona, ApiConfig } from '../types.ts';
 import PersonaConfigModal from './common/PersonaConfigModal.tsx';
+import ApiConfigModal from './common/ApiConfigModal.tsx';
 import PasswordPromptModal from '../components/PasswordPromptModal.tsx';
 import { LIVE_VOICES } from '../constants.ts';
 
@@ -49,15 +50,21 @@ const Settings: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [personas, setPersonas] = useState<Persona[]>([]);
+    const [apiConfigs, setApiConfigs] = useState<ApiConfig[]>([]);
+    const [activeApiConfigId, setActiveApiConfigId] = useState<string | null>(null);
     const [selectedVoice, setSelectedVoice] = useState<string>('Zephyr');
     const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
     const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
+    const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+    const [editingApiConfig, setEditingApiConfig] = useState<ApiConfig | null>(null);
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [passwordModalConfig, setPasswordModalConfig] = useState<any>({});
 
     useEffect(() => {
         dbService.getPersonas().then(setPersonas);
         dbService.getVoicePreference().then(v => v && setSelectedVoice(v));
+        dbService.getApiConfigs().then(setApiConfigs);
+        dbService.getActiveApiConfigId().then(setActiveApiConfigId);
     }, []);
 
     const handleExport = () => {
@@ -192,6 +199,39 @@ const Settings: React.FC = () => {
         event.target.value = '';
     };
 
+    const handleSaveApiConfig = async (config: ApiConfig) => {
+        const updated = apiConfigs.some(c => c.id === config.id)
+            ? apiConfigs.map(c => c.id === config.id ? config : c)
+            : [...apiConfigs, config];
+        setApiConfigs(updated);
+        await dbService.saveApiConfigs(updated);
+        if (!activeApiConfigId) {
+            setActiveApiConfigId(config.id);
+            await dbService.saveActiveApiConfigId(config.id);
+        }
+        window.dispatchEvent(new CustomEvent('apiConfigsUpdated'));
+    };
+
+    const handleDeleteApiConfig = async (id: string) => {
+        if (!window.confirm("Delete this API config?")) return;
+        const updated = apiConfigs.filter(c => c.id !== id);
+        setApiConfigs(updated);
+        await dbService.saveApiConfigs(updated);
+        if (activeApiConfigId === id) {
+            const newActiveId = updated.length > 0 ? updated[0].id : null;
+            setActiveApiConfigId(newActiveId);
+            if (newActiveId) await dbService.saveActiveApiConfigId(newActiveId);
+            else await dbService.saveActiveApiConfigId('');
+        }
+        window.dispatchEvent(new CustomEvent('apiConfigsUpdated'));
+    };
+
+    const handleSetActiveApiConfig = async (id: string) => {
+        setActiveApiConfigId(id);
+        await dbService.saveActiveApiConfigId(id);
+        window.dispatchEvent(new CustomEvent('apiConfigsUpdated'));
+    };
+
     return (
         <FeatureLayout title="Settings" description="Manage characters and data.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -225,15 +265,38 @@ const Settings: React.FC = () => {
                     {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
                 </div>
                 <div className="bg-slate-800/50 rounded-lg p-6 flex flex-col h-[500px]">
-                    <h2 className="text-xl font-bold mb-3 text-white">Preferences & Backup</h2>
-                    <div className="space-y-4">
+                    <h2 className="text-xl font-bold mb-3 text-white">Preferences & API</h2>
+                    <div className="space-y-4 flex-grow overflow-y-auto pr-2">
                         <div>
                             <label className="block text-sm text-slate-400 mb-1">Live Voice</label>
                             <select value={selectedVoice} onChange={(e) => { setSelectedVoice(e.target.value); dbService.saveVoicePreference(e.target.value); }} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3">
                                 {LIVE_VOICES.map(v => <option key={v} value={v}>{v}</option>)}
                             </select>
                         </div>
-                        <div className="pt-4 border-t border-slate-700 flex gap-4">
+                        
+                        <div className="pt-4 border-t border-slate-700">
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-lg font-bold text-white">API Endpoints</h3>
+                                <button onClick={() => { setEditingApiConfig(null); setIsApiModalOpen(true); }} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">Add New</button>
+                            </div>
+                            <div className="space-y-2">
+                                {apiConfigs.length === 0 && <p className="text-sm text-slate-500">Using default system API.</p>}
+                                {apiConfigs.map(config => (
+                                    <div key={config.id} className={`p-3 rounded-lg flex items-center justify-between cursor-pointer group ${activeApiConfigId === config.id ? 'bg-blue-900/50 ring-1 ring-blue-500' : 'bg-slate-700/50 hover:bg-slate-700'}`}>
+                                        <div className="truncate" onClick={() => { setEditingApiConfig(config); setIsApiModalOpen(true); }}>
+                                            <p className="font-semibold text-sm truncate">{config.name}</p>
+                                            <p className="text-xs text-slate-400 truncate">{config.provider} {config.model ? `(${config.model})` : ''}</p>
+                                        </div>
+                                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {activeApiConfigId !== config.id && <button onClick={() => handleSetActiveApiConfig(config.id)} className="text-xs bg-green-600 text-white px-2 py-1 rounded">Use</button>}
+                                            <button onClick={() => handleDeleteApiConfig(config.id)} className="p-1 hover:bg-red-600 rounded"><TrashIcon/></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-700 flex gap-4 mt-auto">
                             <button onClick={handleExport} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"><DownloadIcon/> Export All</button>
                             <input type="file" id="import-all" className="hidden" accept=".json" onChange={handleImportRequest} />
                             <label htmlFor="import-all" className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 cursor-pointer"><UploadIcon/> Import All</label>
@@ -244,6 +307,7 @@ const Settings: React.FC = () => {
             {isPersonaModalOpen && editingPersona && (
                 <PersonaConfigModal isOpen={isPersonaModalOpen} onClose={() => setIsPersonaModalOpen(false)} initialPersona={editingPersona} onSave={handleSavePersona} />
             )}
+            <ApiConfigModal isOpen={isApiModalOpen} onClose={() => setIsApiModalOpen(false)} initialConfig={editingApiConfig} onSave={handleSaveApiConfig} />
             <PasswordPromptModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} {...passwordModalConfig} />
         </FeatureLayout>
     );

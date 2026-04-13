@@ -59,6 +59,8 @@ const openDB = (): Promise<IDBDatabase> => {
 const CHAT_HISTORY_KEY = 'current_chat';
 const PERSONAS_KEY = 'chatbot_personas';
 const VOICE_PREF_KEY = 'voice_preference';
+const API_CONFIGS_KEY = 'api_configs';
+const ACTIVE_API_CONFIG_KEY = 'active_api_config_id';
 
 export const dbService = {
   async addDocuments(files: StoredFile[]): Promise<void> {
@@ -278,6 +280,23 @@ export const dbService = {
           };
           request.onerror = () => reject(request.error);
       });
+  },
+
+  async getApiConfigs(): Promise<import('../types.ts').ApiConfig[]> {
+      const configs = await this.getSetting<import('../types.ts').ApiConfig[]>(API_CONFIGS_KEY);
+      return configs || [];
+  },
+
+  async saveApiConfigs(configs: import('../types.ts').ApiConfig[]): Promise<void> {
+      await this.saveSetting(API_CONFIGS_KEY, configs);
+  },
+
+  async getActiveApiConfigId(): Promise<string | null> {
+      return await this.getSetting<string>(ACTIVE_API_CONFIG_KEY);
+  },
+
+  async saveActiveApiConfigId(id: string): Promise<void> {
+      await this.saveSetting(ACTIVE_API_CONFIG_KEY, id);
   },
 
   async addMemory(memory: Memory): Promise<void> {

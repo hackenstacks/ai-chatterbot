@@ -40,6 +40,15 @@ export interface GroundingSource {
     type: 'web' | 'maps';
 }
 
+export interface ApiConfig {
+  id: string;
+  name: string;
+  provider: string;
+  endpointUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 export type FeatureId =
   | 'live'
   | 'chat'
