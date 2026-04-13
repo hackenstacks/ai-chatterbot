@@ -4,7 +4,7 @@ import { ChatMessage, Persona, Memory, ApiConfig } from '../types.ts';
 import { cryptoService } from './cryptoService.ts';
 
 const DB_NAME = 'GeminiAIStudioDB';
-const DB_VERSION = 7; // Increment for Dexie migration
+const DB_VERSION = 8; // Increment for Dexie migration fix
 
 export interface StoredFile {
     name: string;
@@ -20,18 +20,23 @@ interface EncryptedRecord {
     encryptedPayload: string;
 }
 
+interface EncryptedFileRecord {
+    name: string;
+    encryptedPayload: string;
+}
+
 class AppDatabase extends Dexie {
-    files!: Table<EncryptedRecord, string>;
+    files!: Table<EncryptedFileRecord, string>;
     chatHistory!: Table<EncryptedRecord, string>;
-    settings!: Table<EncryptedRecord, string>;
+    app_settings!: Table<EncryptedRecord, string>;
     memories!: Table<EncryptedRecord, string>;
 
     constructor() {
         super(DB_NAME);
         this.version(DB_VERSION).stores({
-            files: 'id',
+            files: 'name',
             chatHistory: 'id',
-            settings: 'id',
+            app_settings: 'id',
             memories: 'id'
         });
     }
@@ -49,7 +54,7 @@ export const dbService = {
   async addDocuments(files: StoredFile[]): Promise<void> {
     const encryptedFiles = await Promise.all(
         files.map(async (file) => ({
-            id: file.name,
+            name: file.name,
             encryptedPayload: await cryptoService.encrypt(file)
         }))
     );
@@ -64,7 +69,7 @@ export const dbService = {
             const decrypted = await cryptoService.decrypt<StoredFile>(record.encryptedPayload);
             decryptedFiles.push(decrypted);
         } catch (error) {
-            console.error(`Could not decrypt file ${record.id}:`, error);
+            console.error(`Could not decrypt file ${record.name}:`, error);
         }
     }
     return decryptedFiles;
@@ -76,7 +81,7 @@ export const dbService = {
   
   async updateDocument(file: StoredFile): Promise<void> {
     const encryptedPayload = await cryptoService.encrypt(file);
-    await db.files.put({ id: file.name, encryptedPayload });
+    await db.files.put({ name: file.name, encryptedPayload });
   },
 
   async saveChatHistory(messages: ChatMessage[]): Promise<void> {
@@ -103,11 +108,11 @@ export const dbService = {
   
   async savePersonas(personas: Persona[]): Promise<void> {
     const encryptedPayload = await cryptoService.encrypt(personas);
-    await db.settings.put({ id: PERSONAS_KEY, encryptedPayload });
+    await db.app_settings.put({ id: PERSONAS_KEY, encryptedPayload });
   },
 
   async getPersonas(): Promise<Persona[]> {
-    const record = await db.settings.get(PERSONAS_KEY);
+    const record = await db.app_settings.get(PERSONAS_KEY);
     if (record && record.encryptedPayload) {
         try {
             return await cryptoService.decrypt<Persona[]>(record.encryptedPayload);
@@ -121,11 +126,11 @@ export const dbService = {
 
   async saveVoicePreference(voiceName: string): Promise<void> {
       const encryptedPayload = await cryptoService.encrypt(voiceName);
-      await db.settings.put({ id: VOICE_PREF_KEY, encryptedPayload });
+      await db.app_settings.put({ id: VOICE_PREF_KEY, encryptedPayload });
   },
 
   async getVoicePreference(): Promise<string | null> {
-      const record = await db.settings.get(VOICE_PREF_KEY);
+      const record = await db.app_settings.get(VOICE_PREF_KEY);
       if (record && record.encryptedPayload) {
           try {
               return await cryptoService.decrypt<string>(record.encryptedPayload);
@@ -139,11 +144,11 @@ export const dbService = {
   
   async saveSetting<T>(key: string, value: T): Promise<void> {
       const encryptedPayload = await cryptoService.encrypt(value);
-      await db.settings.put({ id: key, encryptedPayload });
+      await db.app_settings.put({ id: key, encryptedPayload });
   },
 
   async getSetting<T>(key: string): Promise<T | null> {
-      const record = await db.settings.get(key);
+      const record = await db.app_settings.get(key);
       if (record && record.encryptedPayload) {
           try {
               return await cryptoService.decrypt<T>(record.encryptedPayload);
@@ -195,7 +200,7 @@ export const dbService = {
       await Promise.all([
           db.files.clear(),
           db.chatHistory.clear(),
-          db.settings.clear(),
+          db.app_settings.clear(),
           db.memories.clear()
       ]);
   },
